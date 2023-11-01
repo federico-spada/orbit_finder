@@ -306,8 +306,8 @@ def Propagate(x,tau,forces,eps=1e-7,sim_dt=1e-3):
     t = et - tau
     p_  = x[6:] 
     # set up rebound simulation and ephemerides extension
-    ephem = assist.Ephem(assist_path+'planets.440',
-                         assist_path+'asteroids_441-n16.bsp')
+    ephem = assist.Ephem(assist_path+'linux_p1550p2650.440',
+                         assist_path+'sb441-n16.bsp')
     sim = rebound.Simulation()
     # initial position of the Sun
     sun0 = ephem.get_particle("sun", t0)
@@ -488,18 +488,18 @@ if __name__ == "__main__":
     ### load data
     #obj_name = '523599'
     #obj_name = '469219'
-    obj_name = '6489'
-    #obj_name = '1I'
+    #obj_name = '6489'
+    obj_name = '1I'
     obsstat_file = 'mpc_obs.txt'
-    objdata_file = obj_name+'.txt'
+    objdata_file = 'example_'+obj_name+'.txt'
     et, ra, de, s_ra, s_de, RS, JD, OC = LoadDataMPC() 
     print('Object: ', obj_name)
 
     ### preliminary orbit determination  
-    #i1, i2, i3 = 10, 30, 70
-    #i1, i2, i3 = 120, 190, 250
-    i1, i2, i3 = 858, 866, 873
-    #i1, i2, i3 = 5, 15, 30
+    #i1, i2, i3 = 10, 30, 70 # for 523599
+    #i1, i2, i3 = 120, 190, 250 # for 469219 
+    #i1, i2, i3 = 858, 866, 873 # for 6489
+    i1, i2, i3 = 5, 15, 30 # for 1I
     r2_, v2_, _ = PreliminaryOrbitDetermination(i1,i2,i3) 
 
     ### to check final result
@@ -515,7 +515,7 @@ if __name__ == "__main__":
     ### differential correction of the orbit
     # non-gravitational force parameters
     parm_ = np.array([])
-    #parm_ = np.array([1e-12, 1e-12, 1e-12])
+    parm_ = np.array([1e-12])
     # initialize first guess
     et0 = et[i2]
     x0 = np.r_[r2_,v2_,parm_]
