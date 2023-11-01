@@ -21,6 +21,7 @@ cc = spice.clight() * days/AU
 # for assist
 all_forces = ['SUN', 'PLANETS', 'ASTEROIDS', 'NON_GRAVITATIONAL', 
               'EARTH_HARMONICS', 'SUN_HARMONICS', 'GR_EIH']
+assist_path = '/Users/fs255/rebound_assist/data/'
 
 # Veres et al. 2017
 uncertainty = { '703': 1.0 , '691': 0.6 , '644': 0.6 ,
@@ -305,8 +306,8 @@ def Propagate(x,tau,forces,eps=1e-7,sim_dt=1e-3):
     t = et - tau
     p_  = x[6:] 
     # set up rebound simulation and ephemerides extension
-    ephem = assist.Ephem('../../rebound_assist/data/planets.440',
-                         '../../rebound_assist/data/asteroids_441-n16.bsp')
+    ephem = assist.Ephem(assist_path+'planets.440',
+                         assist_path+'asteroids_441-n16.bsp')
     sim = rebound.Simulation()
     # initial position of the Sun
     sun0 = ephem.get_particle("sun", t0)
@@ -481,7 +482,7 @@ if __name__ == "__main__":
 
     
     ### provide all Kernels via meta-Kernel
-    spice.furnsh('solsys.mkn')
+    spice.furnsh('spice.mkn')
 
 
     ### load data
@@ -489,8 +490,8 @@ if __name__ == "__main__":
     #obj_name = '469219'
     obj_name = '6489'
     #obj_name = '1I'
-    obsstat_file = '../data/mpc_obs.txt'
-    objdata_file = '../data/'+obj_name+'.txt'
+    obsstat_file = 'mpc_obs.txt'
+    objdata_file = obj_name+'.txt'
     et, ra, de, s_ra, s_de, RS, JD, OC = LoadDataMPC() 
     print('Object: ', obj_name)
 
