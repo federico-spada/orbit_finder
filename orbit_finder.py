@@ -125,6 +125,24 @@ def LoadDataMPC():
 
 
 ### PRELIMINARY ORBIT DETERMINATION -------------------------------------------
+def PreliminaryOrbitDetermination(i1,i2,i3):
+    taui = et[i1]-et[i2], et[i3]-et[i2], et[i3]-et[i1]
+    Ri_ = RS[i1,:], RS[i2,:], RS[i3,:]
+    e1_ = spice.radrec(1.,ra[i1],de[i1])
+    e2_ = spice.radrec(1.,ra[i2],de[i2])
+    e3_ = spice.radrec(1.,ra[i3],de[i3])
+    ei_ = e1_, e2_, e3_
+    r2i = 3.0
+    kmax = 50
+    tol = 1e-6
+    r2_, v2_, k = AnglesOnlyPOD(taui,Ri_,ei_,mu,r2i,kmax,tol)
+    if k < kmax-1:
+       print('Preliminary orbit determination converged in %i iterations' % k)
+    else:
+       print('WARNING: Preliminary orbit determination did not converge.')
+    return r2_, v2_, k < kmax-1
+
+# Reference: Bate, Mueller, White (1971), Section 5.8, page 271
 def AnglesOnlyPOD(taui,Ri_,Li_,mu,r2i,kmax,tol):
     tau1, tau3, tau = taui
     R1_, R2_, R3_ = Ri_
@@ -168,25 +186,11 @@ def AnglesOnlyPOD(taui,Ri_,Li_,mu,r2i,kmax,tol):
             break
     return r2_, v2_, k
 
-def PreliminaryOrbitDetermination(i1,i2,i3):
-    taui = et[i1]-et[i2], et[i3]-et[i2], et[i3]-et[i1]
-    Ri_ = RS[i1,:], RS[i2,:], RS[i3,:]
-    e1_ = spice.radrec(1.,ra[i1],de[i1])
-    e2_ = spice.radrec(1.,ra[i2],de[i2])
-    e3_ = spice.radrec(1.,ra[i3],de[i3])
-    ei_ = e1_, e2_, e3_
-    r2i = 3.0
-    kmax = 50
-    tol = 1e-6
-    r2_, v2_, k = AnglesOnlyPOD(taui,Ri_,ei_,mu,r2i,kmax,tol)
-    if k < kmax-1:
-       print('Preliminary orbit determination converged in %i iterations' % k)
-    else:
-       print('WARNING: Preliminary orbit determination did not converge.') 
-    return r2_, v2_, k < kmax-1
 
 
 ### DIFFERENTIAL CORRECTION OF THE ORBIT --------------------------------------
+# References: Farnocchia et al. (2015) (general method); 
+#             Carpino et al. (2003) (for outliers rejection)
 def DifferentialCorrection(x0,k_max=5,X2_rjb=8.,X2_rec=7.,alpha=0.25,frac=0.05):
     m = len(et) # number of epochs
     n = len(x0) # number of fitting parameters
@@ -366,6 +370,7 @@ def Propagate(x,tau,forces,eps=1e-7,sim_dt=1e-3):
     ##
     ### final integration to evaluate state transition matrix;
     ### non-gravitational forces MUST be turned off!
+    ### I am not really sure why; it could be a bug in ASSIST
     # initialize simulation 
     sim = rebound.Simulation()
     sim.add(part0)
