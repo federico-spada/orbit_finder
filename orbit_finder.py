@@ -262,7 +262,7 @@ def DifferentialCorrection(x0,k_max=5,X2_rjb=8.,X2_rec=7.,alpha=0.25,frac=0.05):
         print('%4i   %12.6e %12.6e %12.6e %6i %6i %6i %4.2f' % (k, chi2v, metric, 
                np.linalg.norm(dx), m_rec, m_rej, m_use, m_use/m))
         ### stopping condition
-        if metric < 1. or chi2v < 1. or np.linalg.norm(dx/x) < 1e-7:
+        if metric < 0.5 or chi2v < 0.5 or np.linalg.norm(dx/x) < 5e-8:
             break
     return x, Cov, z, chi2, B, flag, u, X2
 
@@ -520,12 +520,12 @@ if __name__ == "__main__":
     ### differential correction of the orbit
     # non-gravitational force parameters
     parm_ = np.array([])
-    parm_ = np.array([1e-12])
+    parm_ = np.array([1e-12, 1e-12, 1e-12])
     # initialize first guess
     et0 = et[i2]
     x0 = np.r_[r2_,v2_,parm_]
     # run differential correction
-    x, Cov, z, chi2, B, flag, u, X2  = DifferentialCorrection(x0,k_max=15)
+    x, Cov, z, chi2, B, flag, u, X2  = DifferentialCorrection(x0,k_max=20)
     # output results and check
     print('Converged solution:') 
     print((6*'%16.8e') % (x[0], x[1], x[2], x[3], x[4], x[5])) 
