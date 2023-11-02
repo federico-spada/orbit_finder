@@ -491,20 +491,20 @@ if __name__ == "__main__":
 
 
     ### load data
-    #obj_name = '523599'
+    obj_name = '523599'
     #obj_name = '469219'
     #obj_name = '6489'
-    obj_name = '1I'
+    #obj_name = '1I'
     obsstat_file = 'mpc_obs.txt'
     objdata_file = 'example_'+obj_name+'.txt'
     et, ra, de, s_ra, s_de, RS, JD, OC = LoadDataMPC() 
     print('Object: ', obj_name)
 
     ### preliminary orbit determination  
-    #i1, i2, i3 = 10, 30, 70 # for 523599
+    i1, i2, i3 = 10, 30, 70 # for 523599
     #i1, i2, i3 = 120, 190, 250 # for 469219 
     #i1, i2, i3 = 858, 866, 873 # for 6489
-    i1, i2, i3 = 5, 15, 30 # for 1I
+    #i1, i2, i3 = 5, 15, 30 # for 1I
     r2_, v2_, _ = PreliminaryOrbitDetermination(i1,i2,i3) 
 
     ### to check final result
