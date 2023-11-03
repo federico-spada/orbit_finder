@@ -138,9 +138,11 @@ def PreliminaryOrbitDetermination(i1,i2,i3):
     r2_, v2_, k = AnglesOnlyPOD(taui,Ri_,ei_,mu,r2i,kmax,tol)
     if k < kmax-1:
        print('Preliminary orbit determination converged in %i iterations' % k)
+       exit_code = 0
     else:
-       print('WARNING: Preliminary orbit determination did not converge.')
-    return r2_, v2_, k < kmax-1
+       print('WARNING: Preliminary orbit determination did not converge in %i iterations' % kmax)
+       exit_code = 1
+    return r2_, v2_, exit_code
 
 # Reference: Bate, Mueller, White (1971), Section 5.8, page 271
 def AnglesOnlyPOD(taui,Ri_,Li_,mu,r2i,kmax,tol):
@@ -461,9 +463,9 @@ def ScreenOutput():
     print(' Best-fitting parameters:')
     for k in range(len(x)):
         if k <= 5:
-            print('    %s = %12.8f +/- %12.10f %s' % (names[k], x[k], s_x[k], units[k]))
+            print('    %s = %13.10f +/- %13.10f %s' % (names[k], x[k], s_x[k], units[k]))
         else:
-            print('    %s = %12.8e +/- %12.10e %s' % (names[k], x[k], s_x[k], units[k]))
+            print('    %s = %13.6e +/- %13.6e %s' % (names[k], x[k], s_x[k], units[k]))
     U = spice.pxform( 'J2000', 'ECLIPJ2000', et0*days )
     r_, v_ = U @ x[0:3], U @ x[3:6]
     elts = spice.oscelt(np.r_[r_, v_], et0*days, mu)
@@ -480,33 +482,40 @@ def ScreenOutput():
 ### MAIN ----------------------------------------------------------------------
 if __name__ == "__main__":
 
-    ### forces to be included in ASSIST simulation
+
+    ### initial setup 
+    # forces to be included in ASSIST simulation
     forces = all_forces
-    #forces.remove("SUN_HARMONICS")
-    #forces.remove("EARTH_HARMONICS")
-
-    
-    ### provide all Kernels via meta-Kernel
-    spice.furnsh('spice.mkn')
-
-
-    ### load data
-    obj_name = '523599'
-    #obj_name = '469219'
-    #obj_name = '6489'
-    #obj_name = '1I'
-    obsstat_file = 'mpc_obs.txt'
-    objdata_file = 'example_'+obj_name+'.txt'
-    et, ra, de, s_ra, s_de, RS, JD, OC = LoadDataMPC() 
-    print('Object: ', obj_name)
-
-    ### preliminary orbit determination  
-    i1, i2, i3 = 10, 30, 70 # for 523599
+    # example on how to remove specific force components; see ASSIST docs for details
+    #forces.remove("EARTH_HARMONICS","SUN_HARMONICS")
+    # name of the object (a corresponding file with astrometric data should exist in 
+    # the working directory): 
+    obj_name = '523599' # 2003 RM; see Farnocchia et al. 2023, PSJ 4, 29
+    #obj_name = '469219'  # Kamo 'oaleva 
+    #obj_name = '6489'   # Golevka
+    #obj_name = '1I'     # 'Oumuamua 
+    # indices of the three epochs to be used in the preliminary orbit determination step
+    # some working options are given below for the sample data:
+    i1, i2, i3 = 10, 30, 70     # for 523599
     #i1, i2, i3 = 120, 190, 250 # for 469219 
     #i1, i2, i3 = 858, 866, 873 # for 6489
-    #i1, i2, i3 = 5, 15, 30 # for 1I
+    #i1, i2, i3 = 5, 15, 30     # for 1I
+    # initialize vector of parameters for non-gravitational forces; provide numpy array
+    # with up to three elements for radial, tangential, normal components (see ASSIST
+    # docs), or an empty numpy array to switch non-gravitational forces off in the fit.
+    #parm_ = np.array([])
+    parm_ = np.array([1e-12, 1e-12, 1e-12])
+   
+ 
+    ### provide all Kernels via meta-Kernel
+    spice.furnsh('spice.mkn')
+    ### load data
+    obsstat_file = 'mpc_obs.txt'
+    objdata_file = obj_name+'.txt'
+    et, ra, de, s_ra, s_de, RS, JD, OC = LoadDataMPC() 
+    print('Object: ', obj_name)
+    ### preliminary orbit determination  
     r2_, v2_, _ = PreliminaryOrbitDetermination(i1,i2,i3) 
-
     ### to check final result
     from astroquery.jplhorizons import Horizons
     et0 = et[i2]
@@ -515,12 +524,7 @@ if __name__ == "__main__":
     vec = q.vectors(refplane='earth')
     pos0_ = np.array([vec['x'][0], vec['y'][0], vec['z'][0]])
     vel0_ = np.array([vec['vx'][0], vec['vy'][0], vec['vz'][0]])
-
-
     ### differential correction of the orbit
-    # non-gravitational force parameters
-    parm_ = np.array([])
-    parm_ = np.array([1e-12, 1e-12, 1e-12])
     # initialize first guess
     et0 = et[i2]
     x0 = np.r_[r2_,v2_,parm_]
@@ -531,14 +535,10 @@ if __name__ == "__main__":
     print((6*'%16.8e') % (x[0], x[1], x[2], x[3], x[4], x[5])) 
     print('JPL Horizons values for comparison:')
     print((6*'%16.8e') % (pos0_[0], pos0_[1], pos0_[2], vel0_[0], vel0_[1], vel0_[2]))
-   
     ### screen output
     ScreenOutput()
-
     ### plot final residuals
     res_ra, res_de = z[:len(et)], z[len(et):]
     PlotResiduals(scaled=False)
-    
-
     ### release the spice Kernels 
     spice.kclear()

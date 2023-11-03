@@ -20,6 +20,17 @@ Planet Center (MPC) database.
     1. MPC observatory codes and geodatum "mpc_obs.txt" (cf. https://www.minorplanetcenter.net/iau/lists/ObsCodes.html)
     2. File with astrometric observations in MPC format; the following examples are provided: example_1I.txt; example_469219.txt; example_523599.txt; example_6489.txt
 
-## Description (TBD)
+## Description
+The orbit determination procedure is described at length in https://arxiv.org/abs/2304.06964,
+together with a previous version of the code, written in MATLAB.
+The script contains functions for loading the data (in MPC format), performing preliminary orbit determination
+on a subset of three user-specified epochs, and refining the initial guess by differential correction of the
+orbit. The differential correction procedure implements automatic outlier rejection (based on Carpino et al. 
+2003, Icarus, 166, 248), and solves for the magnitude of components of the non-gravitational acceleration (if
+requested by the user).
 
-## Examples (TBD)
+## Usage
+Lines 486-507 of the script contain the basic setup, and require manual intervention for a user-defined run.
+
+## Contributors
+Federico Spada
