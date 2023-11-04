@@ -18,7 +18,7 @@ Planet Center (MPC) database.
   (not part of this repository; available from: https://assist.readthedocs.io/en/stable/installation/)
 * Input data: 
     1. MPC observatory codes and geodatum "mpc_obs.txt" (cf. https://www.minorplanetcenter.net/iau/lists/ObsCodes.html)
-    2. File with astrometric observations in MPC format; the following examples are provided: example_1I.txt; example_469219.txt; example_523599.txt; example_6489.txt
+    2. File with astrometric observations in MPC format; the following are provided for testing purposes: 1I.txt; 469219.txt; 523599.txt; 6489.txt
 
 ## Description
 The orbit determination procedure is described at length in https://arxiv.org/abs/2304.06964,
