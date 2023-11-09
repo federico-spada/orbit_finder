@@ -43,12 +43,12 @@ def LoadDataMPC():
     rcos = np.array([])
     rsin = np.array([])
     with open(obsstat_file) as f:
-      for l in f:
-          if l[3:12] != '         ':
-             obss = np.append(obss, l[0:3])
-             lons = np.append(lons, float(l[3:13]))
-             rcos = np.append(rcos, float(l[13:21])*Re)
-             rsin = np.append(rsin, float(l[21:30])*Re)
+        for l in f:
+            if l[3:12] != '         ':
+               obss = np.append(obss, l[0:3])
+               lons = np.append(lons, float(l[3:13]))
+               rcos = np.append(rcos, float(l[13:21])*Re)
+               rsin = np.append(rsin, float(l[21:30])*Re)
     # load observations
     OC = np.array([])
     JD = np.array([])
