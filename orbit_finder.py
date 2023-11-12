@@ -4,8 +4,8 @@ import matplotlib.dates as mdates
 from datetime import datetime
 from astroquery.jplhorizons import Horizons
 import spiceypy as spice
-import rebound
-import assist
+from scipy.integrate import solve_ivp
+from extensisq import SWAG
 
 
 # constants 
@@ -14,13 +14,25 @@ AU   = 1.495978707e8 # km
 days = 86400 # s 
 mu_s = 132712440041.279419 # km^3/s^2
 
-# for assist
-all_forces = ['SUN', 'PLANETS', 'ASTEROIDS', 'NON_GRAVITATIONAL',
-              'EARTH_HARMONICS', 'SUN_HARMONICS', 'GR_EIH']
-assist_path = '/Users/fs255/rebound_assist/data/'
+# gravitational parameters of planets (DE440)
+mu_p = np.array([22031.868551, 324858.592000, 398600.435507, 42828.375816, \
+                 126712764.100000, 37940584.841800, 5794556.400000, \
+                 6836527.100580, 975.500000, 4902.800118])
+# gravitational parameter of asteroids (DE440)
+mu_a = np.array([62.628889, 13.665878, 1.920571, 17.288233, 0.646878, 1.139872,\
+                 5.625148, 2.023021, 1.589658, 0.797801, 2.683036, 0.938106, \
+                 2.168232, 1.189808, 3.894483, 2.830410])
+# names of planets in SPICE Kernel
+tgP = ['1', '2', '399', '4', '5', '6', '7', '8', '9', '301']
+# names of asteroids in SPICE Kernel
+tgA = ['2000001', '2000002', '2000003', '2000004', '2000006', '2000007', \
+       '2000010', '2000015', '2000016', '2000029', '2000052', '2000065', \
+       '2000087', '2000088', '2000511', '2000704']
 
 # scaled to the same units used by assist
 mu_s = mu_s * days**2/AU**3
+mu_p = mu_p * days**2/AU**3
+mu_a = mu_a * days**2/AU**3
 cc = spice.clight() * days/AU
 
 # Veres et al. 2017
@@ -193,7 +205,7 @@ def AnglesOnlyPOD(taui,Ri_,Li_,mu_s,r2i,kmax,tol):
 ### DIFFERENTIAL CORRECTION OF THE ORBIT --------------------------------------
 # References: Farnocchia et al. (2015) (general method); 
 #             Carpino et al. (2003) (for outliers rejection)
-def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,forces,kmax):
+def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,ng_acc,kmax):
     # parameters
     X2_rjb = 8.   # base rejection threshold
     X2_rec = 7.   # recovery threshold
@@ -206,7 +218,7 @@ def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,forces,kmax):
     W = np.diag(1./s**2)
     # initializations 
     x = x0
-    z, B = ResidualsAndPartials(et,ra,de,RS,et0,x,forces)
+    z, B = ResidualsAndPartials(et,ra,de,RS,et0,x,ng_acc)
     Cov = np.linalg.inv(B.T @ W @ B) 
     flag = np.repeat(True,m) # True for epochs included in the fit
     X2 = np.zeros(m)
@@ -229,7 +241,7 @@ def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,forces,kmax):
         # update parameters vector:
         x = x + dx
         # get residuals and design matrix for updated x
-        z, B = ResidualsAndPartials(et,ra,de,RS,et0,x,forces)
+        z, B = ResidualsAndPartials(et,ra,de,RS,et0,x,ng_acc)
         # calculate post-fit residuals
         u = ( np.eye(2*m) - B @ Cov @ B.T @ W ) @ z
         ### handle epoch selection based on chi-square
@@ -273,13 +285,30 @@ def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,forces,kmax):
             break
     return x, Cov, z, chi2, B, flag, u, X2
 
-def ResidualsAndPartials(et,ra,de,RS,et0,x,forces):
+def ResidualsAndPartials(et,ra,de,RS,et0,x,ng_acc):
+    rtol = 1e-8
+    atol = 1e-11
     n = len(x)
     m = len(et)
+    nng = n-6 
+    ###
+    r0_, v0_, A = x[0:3], x[3:6], x[6:]
+    # form initial conditions for ODE integrator
+    y0 = np.concatenate([r0_, v0_, np.eye(6).flatten(), np.zeros((6,nng)).flatten()])
+    # forward integration from et0 to et[-1]
+    tspan_f = [et0, et[-1]]
+    sol_f = solve_ivp(derivs,tspan_f,y0,method=SWAG,args=(A,ng_acc,),rtol=rtol,atol=atol,dense_output=True)
+    # backward integration from et0 to et[0]
+    tspan_b = [et0, et[0]] 
+    sol_b = solve_ivp(derivs,tspan_b,y0,method=SWAG,args=(A,ng_acc,),rtol=rtol,atol=atol,dense_output=True)
+    ii_f = np.where(et >  et0)[0]
+    ii_b = np.where(et <= et0)[0]
     ### iteration needed to account for light travel time:
     tau = np.zeros(m)
     for j in range(2):
-        yy, PP, SS = Propagate(x,et0,et,tau,forces)
+        teval_b = et[ii_b]-tau[ii_b]
+        teval_f = et[ii_f]-tau[ii_f]
+        yy = np.r_[sol_b.sol(teval_b).T, sol_f.sol(teval_f).T]
         for i in range(m):
             r_ = yy[i,:3]
             R_ = RS[i,:]
@@ -293,8 +322,8 @@ def ResidualsAndPartials(et,ra,de,RS,et0,x,forces):
     for i in range(m):
         r_ = yy[i,:3]
         R_ = RS[i,:]
-        P  = PP[i,:,:]
-        S  = SS[i,:,:]
+        P  = np.reshape(yy[i,6:42],(6,6))
+        S  = np.reshape(yy[i,42:],(6,nng))
         rho_ = r_ - R_
         rho = np.linalg.norm(rho_)
         cos_ra, sin_ra = np.cos(ra[i]), np.sin(ra[i])
@@ -312,108 +341,80 @@ def ResidualsAndPartials(et,ra,de,RS,et0,x,forces):
         z[m+i] = np.dot(dL_,D_)
     return z, B
 
-def Propagate(x,et0,et,tau,forces):
-    eps = 1e-6
-    t0 = et0
-    t = et - tau
-    p_  = x[6:] 
-    # set up rebound simulation and ephemerides extension
-    ephem = assist.Ephem(assist_path+'linux_p1550p2650.440',
-                         assist_path+'sb441-n16.bsp')
-    sim = rebound.Simulation()
-    # initial position of the Sun
-    sun0 = ephem.get_particle("sun", t0)
-    # initial conditions of test particle
-    part0_h = rebound.Particle( x = x[0],  y = x[1],  z = x[2],
-                               vx = x[3], vy = x[4], vz = x[5] )
-    # change from heliocentric to SS barycentric frame
-    part0 = sun0 + part0_h
-    # initialize simulation 
-    sim.add(part0)
-    sim.t = t0
-    extras = assist.Extras(sim, ephem)
-    # parameters for non-gravitational forces
-    nparms = len(p_)
-    params_ngforce = np.zeros(3)
-    for k in range(nparms):
-        params_ngforce[k] = p_[k]
-    extras.particle_params = params_ngforce
-    # >>> list with forces to be included
-    extras.forces = forces
-    #print(extras.forces) # check what is included
-    # <<<
-    # prepare for integration 
-    m = len(t)
-    y = np.zeros((m,6))
-    ### first integration: get state vector with nominal values of p_
-    for i, ti in enumerate(t):
-        extras.integrate_or_interpolate(ti)
-        ref = ephem.get_particle("sun", ti)
-        y[i,0:3] = np.array(sim.particles[0].xyz) - np.array(ref.xyz)
-        y[i,3:6] = np.array(sim.particles[0].vxyz)
-    sim = None
-    ### set of integration with varying p_ components, to evaluate the
-    ### sensitivity matrix
-    S = np.zeros((m,6,nparms))
-    y1 = np.zeros(6)
-    for k in range(nparms):
-        delta_params_ngforce = np.zeros(3)
-        delta_params_ngforce[k] = params_ngforce[k] * eps
-        # initialize simulation 
-        sim = rebound.Simulation()
-        sim.add(part0)
-        sim.t = t0
-        extras = assist.Extras(sim, ephem)
-        extras.particle_params = params_ngforce + delta_params_ngforce
-        for i, ti in enumerate(t):
-            extras.integrate_or_interpolate(ti)
-            ref = ephem.get_particle("sun", ti)
-            y1[0:3] = np.array(sim.particles[0].xyz) - np.array(ref.xyz)
-            y1[3:6] = np.array(sim.particles[0].vxyz)
-            for j in range(6):
-                S[i,j,k] = (y1[j] - y[i,j])/(delta_params_ngforce[k])
-        sim = None
-    ##
-    ### To evaluate state transition matrix use variational particles
-    ### Note: for some reason, this integration must be done separately
-    ### I am not really sure why, but it must be due to the way variational
-    ### particles are treated in REBOUND/ASSIST
-    # initialize simulation 
-    sim = rebound.Simulation()
-    sim.add(part0)
-    sim.t = t0
-    extras = assist.Extras(sim, ephem)
-    # turn off non-gravitational forces to use variational particles
-    #forces = extras.forces
-    #forces.remove("NON_GRAVITATIONAL")
-    #extras.forces = forces
-    # add variational particles to calculate state transition matrix
-    vp_x0 = sim.add_variation(testparticle=0,order=1)
-    vp_x0.particles[0].x = 1
-    vp_y0 = sim.add_variation(testparticle=0,order=1)
-    vp_y0.particles[0].y = 1
-    vp_z0 = sim.add_variation(testparticle=0,order=1)
-    vp_z0.particles[0].z = 1
-    vp_vx0 = sim.add_variation(testparticle=0,order=1)
-    vp_vx0.particles[0].vx = 1
-    vp_vy0 = sim.add_variation(testparticle=0,order=1)
-    vp_vy0.particles[0].vy = 1
-    vp_vz0 = sim.add_variation(testparticle=0,order=1)
-    vp_vz0.particles[0].vz = 1
-    # prepare for integration 
-    m = len(t)
-    P = np.zeros((m,6,6))
-    # run rebound simulation + assist
-    for i, ti in enumerate(t):
-        extras.integrate_or_interpolate(ti)
-        # state transition matrix
-        P[i,:,0] = np.r_[ vp_x0.particles[0].xyz,  vp_x0.particles[0].vxyz ]
-        P[i,:,1] = np.r_[ vp_y0.particles[0].xyz,  vp_y0.particles[0].vxyz ]
-        P[i,:,2] = np.r_[ vp_z0.particles[0].xyz,  vp_z0.particles[0].vxyz ]
-        P[i,:,3] = np.r_[ vp_vx0.particles[0].xyz, vp_vx0.particles[0].vxyz ]
-        P[i,:,4] = np.r_[ vp_vy0.particles[0].xyz, vp_vy0.particles[0].vxyz ]
-        P[i,:,5] = np.r_[ vp_vz0.particles[0].xyz, vp_vz0.particles[0].vxyz ]
-    return y, P, S
+
+def derivs(t,y,A,ng_acc):
+    r_ = y[0:3]
+    v_ = y[3:6]
+    r = np.linalg.norm(r_)
+    v = np.linalg.norm(v_)
+    # main term
+    f_ = -mu_s*r_/r**3
+    # perturbations
+    p_ = 0
+    # planets
+    for i in range(len(mu_p)):
+        s_, _ = spice.spkpos(tgP[i], t*days, 'J2000', 'NONE', '10')
+        s_ = s_/AU 
+        p_ = p_ - mu_p[i]*( (r_-s_)/np.linalg.norm(r_-s_)**3 + s_/np.linalg.norm(s_)**3 )
+    # asteroids
+    for i in range(len(mu_a)):
+        s_, _ = spice.spkpos(tgA[i], t*days, 'J2000', 'NONE', '10')
+        s_ = s_/AU
+        p_ = p_ - mu_a[i]*( (r_-s_)/np.linalg.norm(r_-s_)**3 + s_/np.linalg.norm(s_)**3 )
+    # GR correction
+    p_ = p_ + (mu_s/cc**2/r**3)*( (4*mu_s/r - v**2)*r_ + 4*np.dot(r_,v_)*v_ )
+    # non-gravitational term
+    nng = len(A)
+    g = (1.0/r)**2
+    match ng_acc:
+        case 'RTN':
+            ur_ = r_/r
+            un_ = np.cross(r_,v_)/np.linalg.norm(np.cross(r_,v_))
+            ut_ = np.cross(un_,ur_)
+            arad_ = g * (A[0] * ur_ + A[1] * ut_ + A[2] * un_)
+            dadA  = g * np.c_[ur_, ut_, un_]
+        case 'ACN':
+            ua_ = v_/v
+            un_ = np.cross(r_,v_)/np.linalg.norm(np.cross(r_,v_))
+            uc_ = np.cross(un_,ua_)
+            arad_ = g * (A[0] * ua_ + A[1] * uc_ + A[2] * un_)
+            dadA  = g * np.c_[ua_, uc_, un_]
+        case 'radial':
+            arad_ = g * A[0] * r_/r
+            dadA  = arad_/A[0]
+        case 'tangential':
+            arad_ = -g * A[0] * v_/v
+            dadA  = arad_/A[0]
+        case _:
+            arad_ = np.zeros(3)
+            dadA = np.array([])
+    p_ = p_ + arad_
+    # total acceleration
+    a_ = f_ + p_
+    ### variational equations
+    PHI = np.reshape(y[6:42],(6,6))
+    # main term
+    F = -mu_s/r**3*( np.eye(3) - 3*np.outer(r_,r_)/r**2)
+    # point mass perturbers (planets only!)
+    P = np.zeros((3,3))
+    for i in range(len(mu_p)):
+        s_, _ = spice.spkpos(tgP[i], t*days, 'J2000', 'NONE', '10')
+        s_ = s_/AU
+        P = P - mu_p[i]/np.linalg.norm(r_-s_)**3 \
+          * ( np.eye(3) - 3*np.outer(r_-s_,r_-s_)/np.linalg.norm(r_-s_)**2 )
+    # asteroids, relativity, and radiation pressure are omitted in the variational eqns.
+    G = F + P
+    AP = np.block([[np.zeros((3,3)), np.eye(3)], [G, np.zeros((3,3))]]) @ PHI
+    # sensitivity matrix
+    if nng > 0:
+        S = np.reshape(y[42:],(6,nng))
+        AS = np.block([[np.zeros((3,3)), np.eye(3)], [G, np.zeros((3,3))]]) @ S \
+           + np.concatenate((np.zeros((3,nng)),np.c_[dadA]))
+    else:
+        AS = np.array([])
+    ### full vector with derivatives 
+    dydt = np.concatenate([v_, a_, AP.flatten(), AS.flatten()])
+    return dydt
 
 
 ### PLOT AND OUTPUT -----------------------------------------------------------
@@ -482,7 +483,7 @@ def ScreenOutput(et0,x,Cov):
 
 
 
-def RunFit(obj_name,i1,i2,i3,parm_,forces=all_forces,it_max=5):
+def RunFit(obj_name,i1,i2,i3,parm_,ng_acc='none',it_max=5):
     ### provide all Kernels via meta-Kernel
     spice.furnsh('spice.mkn')
     ### load data
@@ -503,7 +504,7 @@ def RunFit(obj_name,i1,i2,i3,parm_,forces=all_forces,it_max=5):
     # initialize first guess
     x0 = np.r_[r2_,v2_,parm_]
     # run differential correction
-    x, Cov, z, chi2, B, flag, u, X2 = DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,forces,it_max)
+    x, Cov, z, chi2, B, flag, u, X2 = DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,ng_acc,it_max)
     # output results and check
     #print('Converged solution:')
     #print((6*'%16.8e') % (x[0], x[1], x[2], x[3], x[4], x[5]))
@@ -525,13 +526,13 @@ if __name__ == "__main__":
 
     print('Oumuamua, no non-grav. acc.')
     RunFit('1I',5,15,30,np.array([]))
-    print('Oumuamua, with non-grav. acc.')
-    RunFit('1I',5,15,30,np.array([1e-12,1e-12,1e-12]))
+    print('Oumuamua, with non-grav. acc. (radial)')
+    RunFit('1I',5,15,30,np.array([1e-12]),ng_acc='radial')
 
     print('RM 2003, no non-grav. acc.')
     RunFit('523599',10,30,70,np.array([]))
-    print('RM 2003, with non-grav. acc.')
-    RunFit('523599',10,30,70,np.array([1e-12,1e-12,1e-12]))
+    print('RM 2003, with non-grav. acc. (RTN)')
+    RunFit('523599',10,30,70,np.array([1e-12,1e-12,1e-12]),ng_acc='RTN')
 
     print('Kamo\'oaleva, gravity only')
     RunFit('469219',120,190,250,np.array([]))
