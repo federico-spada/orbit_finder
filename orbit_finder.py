@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime
-
+from astroquery.jplhorizons import Horizons
 import spiceypy as spice
 import rebound
 import assist
@@ -14,14 +14,14 @@ AU   = 1.495978707e8 # km
 days = 86400 # s 
 mu_s = 132712440041.279419 # km^3/s^2
 
-# scaled to the same units used by assist
-mu = mu_s * days**2/AU**3
-cc = spice.clight() * days/AU
-
 # for assist
-all_forces = ['SUN', 'PLANETS', 'ASTEROIDS', 'NON_GRAVITATIONAL', 
+all_forces = ['SUN', 'PLANETS', 'ASTEROIDS', 'NON_GRAVITATIONAL',
               'EARTH_HARMONICS', 'SUN_HARMONICS', 'GR_EIH']
 assist_path = '/Users/fs255/rebound_assist/data/'
+
+# scaled to the same units used by assist
+mu_s = mu_s * days**2/AU**3
+cc = spice.clight() * days/AU
 
 # Veres et al. 2017
 uncertainty = { '703': 1.0 , '691': 0.6 , '644': 0.6 ,
@@ -36,7 +36,7 @@ uncertainty = { '703': 1.0 , '691': 0.6 , '644': 0.6 ,
 
 
 ### LOAD DATA -----------------------------------------------------------------
-def LoadDataMPC():
+def LoadDataMPC(obsstat_file,objdata_file):
     # load locations of observing stations
     obss = np.array([])
     lons = np.array([])
@@ -125,7 +125,7 @@ def LoadDataMPC():
 
 
 ### PRELIMINARY ORBIT DETERMINATION -------------------------------------------
-def PreliminaryOrbitDetermination(i1,i2,i3):
+def PreliminaryOrbitDetermination(et,ra,de,s_ra,s_de,RS,i1,i2,i3):
     taui = et[i1]-et[i2], et[i3]-et[i2], et[i3]-et[i1]
     Ri_ = RS[i1,:], RS[i2,:], RS[i3,:]
     e1_ = spice.radrec(1.,ra[i1],de[i1])
@@ -135,7 +135,7 @@ def PreliminaryOrbitDetermination(i1,i2,i3):
     r2i = 3.0
     kmax = 50
     tol = 1e-6
-    r2_, v2_, k = AnglesOnlyPOD(taui,Ri_,ei_,mu,r2i,kmax,tol)
+    r2_, v2_, k = AnglesOnlyPOD(taui,Ri_,ei_,mu_s,r2i,kmax,tol)
     if k < kmax-1:
        print('Preliminary orbit determination converged in %i iterations' % k)
        exit_code = 0
@@ -145,12 +145,12 @@ def PreliminaryOrbitDetermination(i1,i2,i3):
     return r2_, v2_, exit_code
 
 # Reference: Bate, Mueller, White (1971), Section 5.8, page 271
-def AnglesOnlyPOD(taui,Ri_,Li_,mu,r2i,kmax,tol):
+def AnglesOnlyPOD(taui,Ri_,Li_,mu_s,r2i,kmax,tol):
     tau1, tau3, tau = taui
     R1_, R2_, R3_ = Ri_
     L1_, L2_, L3_ = Li_
     r2 = r2i
-    u2 = mu/r2**3
+    u2 = mu_s/r2**3
     f1 = 1 - u2*tau1**2/2
     f3 = 1 - u2*tau3**2/2
     g1 = tau1 - u2*tau1**3/6
@@ -173,7 +173,7 @@ def AnglesOnlyPOD(taui,Ri_,Li_,mu,r2i,kmax,tol):
         r2_ = x[:3]
         v2_ = x[3:]
         r2 = np.linalg.norm(r2_)
-        u2 = mu/r2**3
+        u2 = mu_s/r2**3
         p2 = np.dot(r2_,v2_)/r2**2
         q2 = np.dot(v2_,v2_)/r2**2 - u2
         f1 = 1 - u2*tau1**2/2 + u2*p2*tau1**3/2 + u2*(u2 - 15*p2**2 + 3*q2)*tau1**4/24 \
@@ -193,7 +193,12 @@ def AnglesOnlyPOD(taui,Ri_,Li_,mu,r2i,kmax,tol):
 ### DIFFERENTIAL CORRECTION OF THE ORBIT --------------------------------------
 # References: Farnocchia et al. (2015) (general method); 
 #             Carpino et al. (2003) (for outliers rejection)
-def DifferentialCorrection(x0,k_max=5,X2_rjb=8.,X2_rec=7.,alpha=0.25,frac=0.05):
+def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,forces,kmax):
+    # parameters
+    X2_rjb = 8.   # base rejection threshold
+    X2_rec = 7.   # recovery threshold
+    alpha  = 0.25 # fraction of max chi-square to use as increased rejection threshold 
+    frac   = 0.05 # maximum fraction of epochs discarded in a single step
     m = len(et) # number of epochs
     n = len(x0) # number of fitting parameters
     # uncertainties and weighting matrix
@@ -201,7 +206,7 @@ def DifferentialCorrection(x0,k_max=5,X2_rjb=8.,X2_rec=7.,alpha=0.25,frac=0.05):
     W = np.diag(1./s**2)
     # initializations 
     x = x0
-    z, B = ResidualsAndPartials(x)
+    z, B = ResidualsAndPartials(et,ra,de,RS,et0,x,forces)
     Cov = np.linalg.inv(B.T @ W @ B) 
     flag = np.repeat(True,m) # True for epochs included in the fit
     X2 = np.zeros(m)
@@ -209,7 +214,7 @@ def DifferentialCorrection(x0,k_max=5,X2_rjb=8.,X2_rec=7.,alpha=0.25,frac=0.05):
     # begin differential correction iteration
     print('Differential correction begins.')
     print('#iter   red.chisq.   metric      ||dx/x||        #rec   #rej  #use frac')
-    for k in range(k_max):
+    for k in range(kmax):
         ### least-squares fit here
         #flag = np.repeat(True,m) # DEBUGGING ONLY 
         # solve normal equations and apply corrections to x:
@@ -224,7 +229,7 @@ def DifferentialCorrection(x0,k_max=5,X2_rjb=8.,X2_rec=7.,alpha=0.25,frac=0.05):
         # update parameters vector:
         x = x + dx
         # get residuals and design matrix for updated x
-        z, B = ResidualsAndPartials(x)
+        z, B = ResidualsAndPartials(et,ra,de,RS,et0,x,forces)
         # calculate post-fit residuals
         u = ( np.eye(2*m) - B @ Cov @ B.T @ W ) @ z
         ### handle epoch selection based on chi-square
@@ -268,13 +273,13 @@ def DifferentialCorrection(x0,k_max=5,X2_rjb=8.,X2_rec=7.,alpha=0.25,frac=0.05):
             break
     return x, Cov, z, chi2, B, flag, u, X2
 
-def ResidualsAndPartials(x):
+def ResidualsAndPartials(et,ra,de,RS,et0,x,forces):
     n = len(x)
     m = len(et)
     ### iteration needed to account for light travel time:
     tau = np.zeros(m)
     for j in range(2):
-        yy, PP, SS = Propagate(x,tau,forces)
+        yy, PP, SS = Propagate(x,et0,et,tau,forces)
         for i in range(m):
             r_ = yy[i,:3]
             R_ = RS[i,:]
@@ -292,12 +297,12 @@ def ResidualsAndPartials(x):
         S  = SS[i,:,:]
         rho_ = r_ - R_
         rho = np.linalg.norm(rho_)
-        cra, sra = np.cos(ra[i]), np.sin(ra[i])
-        cde, sde = np.cos(de[i]), np.sin(de[i])
+        cos_ra, sin_ra = np.cos(ra[i]), np.sin(ra[i])
+        cos_de, sin_de = np.cos(de[i]), np.sin(de[i])
         Lc_ = rho_/rho
-        A_  = np.array([-sra, cra, 0.])
-        D_  = np.array([-sde*cra, -sde*sra, cde ])
-        Lo_ = np.array([ cde*cra,  cde*sra, sde ])
+        A_  = np.array([-sin_ra, cos_ra, 0.])
+        D_  = np.array([-sin_de*cos_ra, -sin_de*sin_ra, cos_de ])
+        Lo_ = np.array([ cos_de*cos_ra,  cos_de*sin_ra, sin_de ])
         dL_ = Lo_ - Lc_
         # fill partials matrix
         B[i  ,:] = np.r_[ A_, np.zeros(3) ]/rho @ np.block([P, S])
@@ -307,7 +312,8 @@ def ResidualsAndPartials(x):
         z[m+i] = np.dot(dL_,D_)
     return z, B
 
-def Propagate(x,tau,forces,eps=1e-7,sim_dt=1e-3):
+def Propagate(x,et0,et,tau,forces):
+    eps = 1e-6
     t0 = et0
     t = et - tau
     p_  = x[6:] 
@@ -326,7 +332,6 @@ def Propagate(x,tau,forces,eps=1e-7,sim_dt=1e-3):
     sim.add(part0)
     sim.t = t0
     extras = assist.Extras(sim, ephem)
-    sim.ri_ias15.min_dt = sim_dt
     # parameters for non-gravitational forces
     nparms = len(p_)
     params_ngforce = np.zeros(3)
@@ -358,7 +363,6 @@ def Propagate(x,tau,forces,eps=1e-7,sim_dt=1e-3):
         sim = rebound.Simulation()
         sim.add(part0)
         sim.t = t0
-        sim.ri_ias15.min_dt = sim_dt
         extras = assist.Extras(sim, ephem)
         extras.particle_params = params_ngforce + delta_params_ngforce
         for i, ti in enumerate(t):
@@ -370,19 +374,19 @@ def Propagate(x,tau,forces,eps=1e-7,sim_dt=1e-3):
                 S[i,j,k] = (y1[j] - y[i,j])/(delta_params_ngforce[k])
         sim = None
     ##
-    ### final integration to evaluate state transition matrix;
-    ### non-gravitational forces MUST be turned off!
-    ### I am not really sure why; it could be a bug in ASSIST
+    ### To evaluate state transition matrix use variational particles
+    ### Note: for some reason, this integration must be done separately
+    ### I am not really sure why, but it must be due to the way variational
+    ### particles are treated in REBOUND/ASSIST
     # initialize simulation 
     sim = rebound.Simulation()
     sim.add(part0)
     sim.t = t0
     extras = assist.Extras(sim, ephem)
-    sim.ri_ias15.min_dt = sim_dt
     # turn off non-gravitational forces to use variational particles
-    forces = extras.forces
-    forces.remove("NON_GRAVITATIONAL")
-    extras.forces = forces
+    #forces = extras.forces
+    #forces.remove("NON_GRAVITATIONAL")
+    #extras.forces = forces
     # add variational particles to calculate state transition matrix
     vp_x0 = sim.add_variation(testparticle=0,order=1)
     vp_x0.particles[0].x = 1
@@ -412,17 +416,14 @@ def Propagate(x,tau,forces,eps=1e-7,sim_dt=1e-3):
     return y, P, S
 
 
-
 ### PLOT AND OUTPUT -----------------------------------------------------------
-def PlotResiduals(scaled=False):
+def PlotResiduals(et,res_ra,s_ra,res_de,s_de,flag,scaled=False):
     #plt.figure()
     plt.ion()
     plt.clf()
     not_flag = np.logical_not(flag)
-    tlf = [datetime.fromisoformat(spice.et2utc(eti*days,'ISOC', 0)) 
-           for eti in et[not_flag]]
-    tlt = [datetime.fromisoformat(spice.et2utc(eti*days,'ISOC', 0)) 
-          for eti in et[flag]]
+    tlf = [datetime.fromisoformat(spice.et2utc(eti*days,'ISOC', 0)) for eti in et[not_flag]]
+    tlt = [datetime.fromisoformat(spice.et2utc(eti*days,'ISOC', 0)) for eti in et[flag]]
     plt.subplot(211)
     if scaled:
         plt.plot(tlf,res_ra[not_flag]/s_ra[not_flag],'x',color='darkgray')
@@ -455,7 +456,7 @@ def PlotResiduals(scaled=False):
     plt.grid()
     plt.tight_layout()    
 
-def ScreenOutput():
+def ScreenOutput(et0,x,Cov):
     names = ['x0 ','y0 ','z0 ','vx0','vy0','vz0','A1 ','A2 ','A3 ']
     units = ['AU','AU','AU','AU/day','AU/day','AU/day',
              'AU/day^2','AU/day^2','AU/day^2']
@@ -468,7 +469,7 @@ def ScreenOutput():
             print('    %s = %13.6e +/- %13.6e %s' % (names[k], x[k], s_x[k], units[k]))
     U = spice.pxform( 'J2000', 'ECLIPJ2000', et0*days )
     r_, v_ = U @ x[0:3], U @ x[3:6]
-    elts = spice.oscelt(np.r_[r_, v_], et0*days, mu)
+    elts = spice.oscelt(np.r_[r_, v_], et0*days, mu_s)
     rp, ecc, inc, lnode, argp, M0, _, _ = elts
     print('Orbital elements at epoch ', spice.et2utc(et0*days, 'C', 2),':')
     print('a = %16.8f AU' % (rp/(1-ecc)))
@@ -479,46 +480,20 @@ def ScreenOutput():
     print('M = %16.8f   ' % np.rad2deg(M0))
 
 
-### MAIN ----------------------------------------------------------------------
-if __name__ == "__main__":
 
 
-    ### initial setup 
-    # forces to be included in ASSIST simulation
-    forces = all_forces
-    # example on how to remove specific force components; see ASSIST docs for details
-    #forces.remove("EARTH_HARMONICS","SUN_HARMONICS")
-    # name of the object (a corresponding file with astrometric data should exist in 
-    # the working directory): 
-    obj_name = '523599' # 2003 RM; see Farnocchia et al. 2023, PSJ 4, 29
-    #obj_name = '469219'  # Kamo 'oaleva 
-    #obj_name = '6489'   # Golevka
-    #obj_name = '1I'     # 'Oumuamua 
-    # indices of the three epochs to be used in the preliminary orbit determination step
-    # some working options are given below for the sample data:
-    i1, i2, i3 = 10, 30, 70     # for 523599
-    #i1, i2, i3 = 120, 190, 250 # for 469219 
-    #i1, i2, i3 = 858, 866, 873 # for 6489
-    #i1, i2, i3 = 5, 15, 30     # for 1I
-    # initialize vector of parameters for non-gravitational forces; provide numpy array
-    # with up to three elements for radial, tangential, normal components (see ASSIST
-    # docs), or an empty numpy array to switch non-gravitational forces off in the fit.
-    #parm_ = np.array([])
-    parm_ = np.array([1e-12, 1e-12, 1e-12])
-   
- 
+def RunFit(obj_name,i1,i2,i3,parm_,forces=all_forces,it_max=5):
     ### provide all Kernels via meta-Kernel
     spice.furnsh('spice.mkn')
     ### load data
     obsstat_file = 'mpc_obs.txt'
     objdata_file = obj_name+'.txt'
-    et, ra, de, s_ra, s_de, RS, JD, OC = LoadDataMPC() 
+    et, ra, de, s_ra, s_de, RS, JD, OC = LoadDataMPC(obsstat_file,objdata_file)
     print('Object: ', obj_name)
     ### preliminary orbit determination  
-    r2_, v2_, _ = PreliminaryOrbitDetermination(i1,i2,i3) 
-    ### to check final result
-    from astroquery.jplhorizons import Horizons
+    r2_, v2_, _ = PreliminaryOrbitDetermination(et,ra,de,s_ra,s_de,RS,i1,i2,i3)
     et0 = et[i2]
+    ### to check final result
     epoch = float(spice.et2utc(et0*days,'J', 10)[3:])
     q = Horizons(obj_name, location='@sun', epochs=epoch)
     vec = q.vectors(refplane='earth')
@@ -526,19 +501,41 @@ if __name__ == "__main__":
     vel0_ = np.array([vec['vx'][0], vec['vy'][0], vec['vz'][0]])
     ### differential correction of the orbit
     # initialize first guess
-    et0 = et[i2]
     x0 = np.r_[r2_,v2_,parm_]
     # run differential correction
-    x, Cov, z, chi2, B, flag, u, X2  = DifferentialCorrection(x0,k_max=20)
+    x, Cov, z, chi2, B, flag, u, X2 = DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,forces,it_max)
     # output results and check
-    print('Converged solution:') 
-    print((6*'%16.8e') % (x[0], x[1], x[2], x[3], x[4], x[5])) 
-    print('JPL Horizons values for comparison:')
-    print((6*'%16.8e') % (pos0_[0], pos0_[1], pos0_[2], vel0_[0], vel0_[1], vel0_[2]))
+    #print('Converged solution:')
+    #print((6*'%16.8e') % (x[0], x[1], x[2], x[3], x[4], x[5]))
+    #print('JPL Horizons values for comparison:')
+    #print((6*'%16.8e') % (pos0_[0], pos0_[1], pos0_[2], vel0_[0], vel0_[1], vel0_[2]))
+    print('Differences with JPL Horizons values:')
+    print((6*'%16.8e') % (pos0_[0]-x[0],pos0_[1]-x[1],pos0_[2]-x[2],vel0_[0]-x[3],vel0_[1]-x[4],vel0_[2]-x[5]))
     ### screen output
-    ScreenOutput()
+    ScreenOutput(et0,x,Cov)
     ### plot final residuals
     res_ra, res_de = z[:len(et)], z[len(et):]
-    PlotResiduals(scaled=False)
+    PlotResiduals(et,res_ra,s_ra,res_de,s_de,flag,scaled=True)
     ### release the spice Kernels 
     spice.kclear()
+
+
+### MAIN ----------------------------------------------------------------------
+if __name__ == "__main__":
+
+    print('Oumuamua, no non-grav. acc.')
+    RunFit('1I',5,15,30,np.array([]))
+    print('Oumuamua, with non-grav. acc.')
+    RunFit('1I',5,15,30,np.array([1e-12,1e-12,1e-12]))
+
+    print('RM 2003, no non-grav. acc.')
+    RunFit('523599',10,30,70,np.array([]))
+    print('RM 2003, with non-grav. acc.')
+    RunFit('523599',10,30,70,np.array([1e-12,1e-12,1e-12]))
+
+    print('Kamo\'oaleva, gravity only')
+    RunFit('469219',120,190,250,np.array([]))
+
+    print('Golevka, gravity only')
+    RunFit('6489',858,866,873,np.array([]),it_max=15)
+
