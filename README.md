@@ -12,7 +12,7 @@ Python orbit determination code. Works with astrometric data from the Minor Plan
 
 ## Required input files
 * For SpiceyPy: Meta-Kernel file "spice.mkn"
-  (see https://spiceypy.readthedocs.io/en/stable/other_stuff.html#lesson-1-kernel-management-with-the-kernel-subsystem)
+  (see https://spiceypy.readthedocs.io/en/stable/other_stuff.html#lesson-1-kernel-management-with-the-kernel-subsystem);
   Naif SPICE Kernels can be downloaded from: https://naif.jpl.nasa.gov/naif/data_generic.html
 * For ASSIST: ephemerides files "linux_p1550p2650.440", "sb441-n16.bsp" 
   (not part of this repository; available from: https://assist.readthedocs.io/en/stable/installation/)
