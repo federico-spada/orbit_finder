@@ -12,7 +12,8 @@ Python orbit determination code. Works with astrometric data from the Minor Plan
 
 ## Required input files
 * For SpiceyPy: Meta-Kernel file "spice.mkn"
-  (see https://spiceypy.readthedocs.io/en/stable/other_stuff.html#lesson-1-kernel-management-with-the-kernel-subsystem)
+  (see https://spiceypy.readthedocs.io/en/stable/other_stuff.html#lesson-1-kernel-management-with-the-kernel-subsystem);
+    Naif SPICE Kernels can be downloaded from: https://naif.jpl.nasa.gov/naif/data_generic.html
 * Input data: 
     1. MPC observatory codes and geodatum "mpc_obs.txt" (cf. https://www.minorplanetcenter.net/iau/lists/ObsCodes.html)
     2. File with astrometric observations in MPC format; the following are provided for testing purposes: 1I.txt; 469219.txt; 523599.txt; 6489.txt
