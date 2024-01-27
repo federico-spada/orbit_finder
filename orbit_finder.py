@@ -207,7 +207,7 @@ def AnglesOnlyPOD(taui,Ri_,Li_,mu_s,r2i,kmax,tol):
 ### DIFFERENTIAL CORRECTION OF THE ORBIT --------------------------------------
 # References: Farnocchia et al. (2015) (general method); 
 #             Carpino et al. (2003) (for outliers rejection)
-def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,ng_acc,kmax):
+def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,aNG,kmax):
     # parameters
     X2_rjb = 8.   # base rejection threshold
     X2_rec = 7.   # recovery threshold
@@ -220,7 +220,7 @@ def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,ng_acc,kmax):
     W = np.diag(1./s**2)
     # initializations 
     x = x0
-    z, B = ResidualsAndPartials(et,ra,de,RS,et0,x,ng_acc)
+    z, B = ResidualsAndPartials(et,ra,de,RS,et0,x,aNG)
     Cov = np.linalg.inv(B.T @ W @ B) 
     flag = np.repeat(True,m) # True for epochs included in the fit
     X2 = np.zeros(m)
@@ -243,7 +243,7 @@ def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,ng_acc,kmax):
         # update parameters vector:
         x = x + dx
         # get residuals and design matrix for updated x
-        z, B = ResidualsAndPartials(et,ra,de,RS,et0,x,ng_acc)
+        z, B = ResidualsAndPartials(et,ra,de,RS,et0,x,aNG)
         # calculate post-fit residuals
         u = ( np.eye(2*m) - B @ Cov @ B.T @ W ) @ z
         ### handle epoch selection based on chi-square
@@ -270,8 +270,8 @@ def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,ng_acc,kmax):
         m_rej = min(len(i_mrk), int(frac*m_use))
         X2_mrk = np.flip(np.sort(X2[i_mrk]))
         if len(i_mrk) > 0:
-            kkk =[np.where(X2 == X2_m)[0][0] for X2_m in X2[i_mrk][:m_rej]] 
-            flag[kkk] = False 
+            k1 =[np.where(X2 == X2_m)[0][0] for X2_m in X2[i_mrk][:m_rej]] 
+            flag[k1] = False 
         # update total number of epochs to be used in the fit
         m_use = sum(flag)
         ### convergence metrics
@@ -287,22 +287,24 @@ def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,ng_acc,kmax):
             break
     return x, Cov, z, chi2, B, flag, u, X2
 
-def ResidualsAndPartials(et,ra,de,RS,et0,x,ng_acc):
+def ResidualsAndPartials(et,ra,de,RS,et0,x,aNG):
     rtol = 1e-8
     atol = 1e-11
     n = len(x)
     m = len(et)
-    nng = n-6 
+    n_p = n-6  # number of parameters beyond initial state vector
     ###
-    r0_, v0_, A = x[0:3], x[3:6], x[6:]
+    r0_, v0_, parms_ = x[0:3], x[3:6], x[6:]
     # form initial conditions for ODE integrator
-    y0 = np.concatenate([r0_, v0_, np.eye(6).flatten(), np.zeros((6,nng)).flatten()])
+    y0 = np.concatenate([r0_, v0_, np.eye(6).flatten(), np.zeros((6,n_p)).flatten()])
     # forward integration from et0 to et[-1]
     tspan_f = [et0, et[-1]]
-    sol_f = solve_ivp(derivs,tspan_f,y0,method=SWAG,args=(A,ng_acc,),rtol=rtol,atol=atol,dense_output=True)
+    sol_f = solve_ivp(derivs,tspan_f,y0,method=SWAG,args=(parms_,aNG),
+            rtol=rtol,atol=atol,dense_output=True)
     # backward integration from et0 to et[0]
     tspan_b = [et0, et[0]] 
-    sol_b = solve_ivp(derivs,tspan_b,y0,method=SWAG,args=(A,ng_acc,),rtol=rtol,atol=atol,dense_output=True)
+    sol_b = solve_ivp(derivs,tspan_b,y0,method=SWAG,args=(parms_,aNG),
+            rtol=rtol,atol=atol,dense_output=True)
     ii_f = np.where(et >  et0)[0]
     ii_b = np.where(et <= et0)[0]
     ### iteration needed to account for light travel time:
@@ -325,7 +327,7 @@ def ResidualsAndPartials(et,ra,de,RS,et0,x,ng_acc):
         r_ = yy[i,:3]
         R_ = RS[i,:]
         P  = np.reshape(yy[i,6:42],(6,6))
-        S  = np.reshape(yy[i,42:],(6,nng))
+        S  = np.reshape(yy[i,42:],(6,n_p))
         rho_ = r_ - R_
         rho = np.linalg.norm(rho_)
         cos_ra, sin_ra = np.cos(ra[i]), np.sin(ra[i])
@@ -343,8 +345,8 @@ def ResidualsAndPartials(et,ra,de,RS,et0,x,ng_acc):
         z[m+i] = np.dot(dL_,D_)
     return z, B
 
-
-def derivs(t,y,A,ng_acc):
+# force model and linearization: see Montenbruck & Gill 2005, Chapters 3 and 7, resp.
+def derivs(t,y,parms_,aNG):
     r_ = y[0:3]
     v_ = y[3:6]
     r = np.linalg.norm(r_)
@@ -366,31 +368,14 @@ def derivs(t,y,A,ng_acc):
     # GR correction
     p_ = p_ + (mu_s/cc**2/r**3)*( (4*mu_s/r - v**2)*r_ + 4*np.dot(r_,v_)*v_ )
     # non-gravitational term
-    nng = len(A)
-    g = (1.0/r)**2
-    match ng_acc:
-        case 'RTN':
-            ur_ = r_/r
-            un_ = np.cross(r_,v_)/np.linalg.norm(np.cross(r_,v_))
-            ut_ = np.cross(un_,ur_)
-            arad_ = g * (A[0] * ur_ + A[1] * ut_ + A[2] * un_)
-            dadA  = g * np.c_[ur_, ut_, un_]
-        case 'ACN':
-            ua_ = v_/v
-            un_ = np.cross(r_,v_)/np.linalg.norm(np.cross(r_,v_))
-            uc_ = np.cross(un_,ua_)
-            arad_ = g * (A[0] * ua_ + A[1] * uc_ + A[2] * un_)
-            dadA  = g * np.c_[ua_, uc_, un_]
-        case 'radial':
-            arad_ = g * A[0] * r_/r
-            dadA  = arad_/A[0]
-        case 'tangential':
-            arad_ = -g * A[0] * v_/v
-            dadA  = arad_/A[0]
-        case _:
-            arad_ = np.zeros(3)
-            dadA = np.array([])
-    p_ = p_ + arad_
+    if not aNG:
+       aNG_ = np.zeros(3)
+       dadp = np.array([])
+       n_p  = 0
+    else:
+       aNG_, dadp = aNG(r_,v_,parms_)
+       n_p = len(parms_)
+    p_ = p_ + aNG_
     # total acceleration
     a_ = f_ + p_
     ### variational equations
@@ -408,10 +393,10 @@ def derivs(t,y,A,ng_acc):
     G = F + P
     AP = np.block([[np.zeros((3,3)), np.eye(3)], [G, np.zeros((3,3))]]) @ PHI
     # sensitivity matrix
-    if nng > 0:
-        S = np.reshape(y[42:],(6,nng))
+    if n_p > 0:
+        S = np.reshape(y[42:],(6,n_p))
         AS = np.block([[np.zeros((3,3)), np.eye(3)], [G, np.zeros((3,3))]]) @ S \
-           + np.concatenate((np.zeros((3,nng)),np.c_[dadA]))
+           + np.concatenate((np.zeros((3,n_p)),np.c_[dadp]))
     else:
         AS = np.array([])
     ### full vector with derivatives 
@@ -420,56 +405,84 @@ def derivs(t,y,A,ng_acc):
 
 
 ### PLOT AND OUTPUT -----------------------------------------------------------
-def PlotResiduals(et,res_ra,s_ra,res_de,s_de,flag,scaled=False):
-    #plt.figure()
+def PlotResiduals(et,res_ra,s_ra,res_de,s_de,et0,x,flag,obj_name,scaled=False):
+    not_flag = np.logical_not(flag)
+    tlf = [datetime.fromisoformat(spice.et2utc(eti*days,'ISOC', 0)) \
+           for eti in et[not_flag]]
+    tlt = [datetime.fromisoformat(spice.et2utc(eti*days,'ISOC', 0)) \
+           for eti in et[flag]]
     plt.ion()
     plt.clf()
-    not_flag = np.logical_not(flag)
-    tlf = [datetime.fromisoformat(spice.et2utc(eti*days,'ISOC', 0)) for eti in et[not_flag]]
-    tlt = [datetime.fromisoformat(spice.et2utc(eti*days,'ISOC', 0)) for eti in et[flag]]
-    plt.subplot(211)
+    plt.subplot(311)
+    plt.title(obj_name)
+    # approximate heliocentric distance (TBP approx.)
+    rhf = np.zeros(len(et[not_flag]))
+    for l in range(len(et[not_flag])):
+        r1, _ = KeplerUniv(x[:3],x[3:6],et[not_flag][l]-et[0],mu_s)
+        rhf[l] = r1
+    rht = np.zeros(len(et[flag]))
+    for l in range(len(et[flag])):
+        r1, _ = KeplerUniv(x[:3],x[3:6],et[flag][l]-et[0],mu_s)
+        rht[l] = r1
+    plt.plot(tlf,rhf,'x',color='darkgray')
+    plt.plot(tlt,rht,'.',color='#00356B')
+    plt.gca().xaxis.set_ticklabels([])
+    plt.ylabel('Helioc. Distance (AU)')
+    #xmin, xmax = plt.gca().get_xlim()
+    #plt.plot([xmin,xmax],[0,0],'r--')
+    plt.grid()
+    plt.subplot(312)
+    tmin = datetime.fromisoformat(spice.et2utc(min(et)*days,'ISOC', 0))
+    tmax = datetime.fromisoformat(spice.et2utc(max(et)*days,'ISOC', 0))
     if scaled:
         plt.plot(tlf,res_ra[not_flag]/s_ra[not_flag],'x',color='darkgray')
         plt.plot(tlt,res_ra[flag]/s_ra[flag],'.',color='#00356B',label='R.A.')
-        plt.ylabel('R. A. Residuals ($\sigma$)') 
+        plt.ylabel('R. A. Res. ($\sigma$)') 
         #plt.ylim(min(res_ra[flag]/s_ra[flag]),max(res_ra[flag]/s_ra[flag]))
         plt.ylim(-12,12)
     else:
         plt.plot(tlf,3600*np.rad2deg(res_ra[not_flag]),'x',color='darkgray')
         plt.plot(tlt,3600*np.rad2deg(res_ra[flag]),'.',color='#00356B',label='R.A.')
-        plt.ylabel('R. A. Residuals (arcsec)')
+        plt.ylabel('R. A. Res. (arcsec)')
         plt.ylim(min(3600*np.rad2deg(res_ra[flag])),max(3600*np.rad2deg(res_ra[flag])))
+    plt.plot([tmin,tmax],[0,0],'r')
     plt.grid()
     plt.gca().xaxis.set_ticklabels([])
-    plt.subplot(212)
+    plt.subplot(313)
     if scaled:
         plt.plot(tlf,res_de[not_flag]/s_de[not_flag],'x',color='darkgray')
         plt.plot(tlt,res_de[flag]/s_de[flag],'.',color='#00356B',label='Decl.')
-        plt.ylabel('Decl. Residuals ($\sigma$)')
+        plt.ylabel('Decl. Res. ($\sigma$)')
         #plt.ylim(min(res_de[flag]/s_de[flag]),max(res_de[flag]/s_de[flag]))
         plt.ylim(-12,12)
     else:
         plt.plot(tlf,3600*np.rad2deg(res_de[not_flag]),'x',color='darkgray')
         plt.plot(tlt,3600*np.rad2deg(res_de[flag]),'.',color='#00356B',label='Decl.')
-        plt.ylabel('Decl. Residuals (arcsec)')
+        plt.ylabel('Decl. Res. (arcsec)')
         plt.ylim(min(3600*np.rad2deg(res_de[flag])),max(3600*np.rad2deg(res_de[flag])))
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
-    plt.xticks(rotation=15)
+    #plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+    #plt.xticks(rotation=15)
+    plt.plot([tmin,tmax],[0,0],'r')
     plt.xlabel('Date (UTC)')
+    locator = mdates.AutoDateLocator()
+    formatter = mdates.ConciseDateFormatter(locator)
+    plt.gca().xaxis.set_major_locator(locator)
+    plt.gca().xaxis.set_major_formatter(formatter)
     plt.grid()
-    plt.tight_layout()    
+    plt.tight_layout()
 
 def ScreenOutput(et0,x,Cov):
-    names = ['x0 ','y0 ','z0 ','vx0','vy0','vz0','A1 ','A2 ','A3 ']
-    units = ['AU','AU','AU','AU/day','AU/day','AU/day',
-             'AU/day^2','AU/day^2','AU/day^2']
+    names = ['x0 ','y0 ','z0 ','vx0','vy0','vz0','A1 ','A2 ','A3 ','tau']
+    units = ['[AU]','[AU]','[AU]','[AU/day]','[AU/day]','[AU/day]',
+             '[1e-8 AU/day^2]','[1e-8 AU/day^2]','[1e-8 AU/day^2]','[day]']
     s_x = np.sqrt(np.diagonal(Cov)) 
     print(' Best-fitting parameters:')
     for k in range(len(x)):
-        if k <= 5:
-            print('    %s = %13.10f +/- %13.10f %s' % (names[k], x[k], s_x[k], units[k]))
+        if k in [6,7,8]:
+            xx, ss = x[k]*1e8, s_x[k]*1e8
         else:
-            print('    %s = %13.6e +/- %13.6e %s' % (names[k], x[k], s_x[k], units[k]))
+            xx, ss = x[k], s_x[k]
+        print('    %s = %13.10f +/- %13.10f %s' % (names[k], xx, ss, units[k]))
     U = spice.pxform( 'J2000', 'ECLIPJ2000', et0*days )
     r_, v_ = U @ x[0:3], U @ x[3:6]
     elts = spice.oscelt(np.r_[r_, v_], et0*days, mu_s)
@@ -484,8 +497,8 @@ def ScreenOutput(et0,x,Cov):
 
 
 
-
-def RunFit(obj_name,i1,i2,i3,parm_,ng_acc='none',it_max=5):
+### DRIVER FUNCTION -----------------------------------------------------------
+def RunFit(obj_name,i1,i2,i3,parms_,aNG=None,it_max=9):
     ### provide all Kernels via meta-Kernel
     spice.furnsh('spice.mkn')
     ### load data
@@ -504,41 +517,144 @@ def RunFit(obj_name,i1,i2,i3,parm_,ng_acc='none',it_max=5):
     vel0_ = np.array([vec['vx'][0], vec['vy'][0], vec['vz'][0]])
     ### differential correction of the orbit
     # initialize first guess
-    x0 = np.r_[r2_,v2_,parm_]
+    x0 = np.r_[r2_,v2_,parms_]
     # run differential correction
-    x, Cov, z, chi2, B, flag, u, X2 = DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,ng_acc,it_max)
+    x, Cov, z, chi2, B, flag, u, X2 = DifferentialCorrection(et,ra,de,s_ra,s_de,RS,\
+                                      et0,x0,aNG,it_max)
     # output results and check
-    #print('Converged solution:')
-    #print((6*'%16.8e') % (x[0], x[1], x[2], x[3], x[4], x[5]))
-    #print('JPL Horizons values for comparison:')
-    #print((6*'%16.8e') % (pos0_[0], pos0_[1], pos0_[2], vel0_[0], vel0_[1], vel0_[2]))
     print('Differences with JPL Horizons values:')
-    print((6*'%16.8e') % (pos0_[0]-x[0],pos0_[1]-x[1],pos0_[2]-x[2],vel0_[0]-x[3],vel0_[1]-x[4],vel0_[2]-x[5]))
+    print( ('Delta r_0 = '+3*'%16.8e') % (pos0_[0]-x[0],pos0_[1]-x[1],pos0_[2]-x[2]) )
+    print( ('Delta v_0 = '+3*'%16.8e') % (vel0_[0]-x[3],vel0_[1]-x[4],vel0_[2]-x[5]) )
     ### screen output
     ScreenOutput(et0,x,Cov)
     ### plot final residuals
     res_ra, res_de = z[:len(et)], z[len(et):]
-    PlotResiduals(et,res_ra,s_ra,res_de,s_de,flag,scaled=True)
+    PlotResiduals(et,res_ra,s_ra,res_de,s_de,et0,x,flag,obj_name,scaled=False)
     ### release the spice Kernels 
     spice.kclear()
+
+### FUNCTION IMPLEMENTING THE NON-GRAVITATIONAL ACCELERATION MODEL ------------
+#   *** To be modified or rewritten by the user, as needed ***
+#   RTN decomposition, with option for ACN (comment/uncomment appropriate lines below).
+#   Required argument "parms_" can have 1 to 4 components: 
+#   - If parms_ is passed with up to 3 elements, a symmetric NG acceleration model is 
+#     implemented, with radial dependence according to the Marsden+73 parametrization, 
+#     and the parameters A_i (up to i=3) are fitted in the orbit determination procedure. 
+#   - If parms_ is passed with 4 elements, an asymmetric radial dependence is used,
+#     and the perihelion offset tau (in days) is also fit.
+def NonGravAccel(r_,v_,parms_):
+    ### NG acceleration vector decomposition
+    r = np.linalg.norm(r_)
+    v = np.linalg.norm(v_)
+    # radial/transverse/normal:
+    u1_ = r_/r
+    # or, alternatively, along-track/cross-track/normal:
+    #u1_ = v_/v
+    u3_ = np.cross(r_,v_)/np.linalg.norm(np.cross(r_,v_))
+    u2_ = np.cross(u3_,u1_)
+    ### g function     
+    # Marsden+73 parametrization     
+    aa, r0, mm, nn, kk = 0.1113, 2.808, 2.15, 5.093, 4.6142
+    if len(parms_) <= 3:
+        # symmetric model - no perihelion offset: 
+        A1, A2, A3 = np.pad(parms_, (0, 3-len(parms_)))
+        A_ = A1 * u1_ + A2 * u2_ + A3 * u3_
+        r = np.linalg.norm(r_)
+        g = aa/(r/r0)**mm/(1. + (r/r0)**nn)**kk
+        aNG_ = g * A_
+        dadp = g * np.c_[u1_, u2_, u3_]
+        dadp = np.delete(dadp,range(2,len(parms_)-1,-1),axis=1)
+    else:
+        # perihelion offset, tau, also being fitted:
+        A1, A2, A3, tau = parms_
+        A_ = A1 * u1_ + A2 * u2_ + A3 * u3_
+        # get r', dr'/dtau
+        r1, dr1dtau = KeplerUniv(r_,v_,-tau,mu_s)
+        # this is g(r') = g[r(t-tau)]  
+        g = aa/(r1/r0)**mm/(1. + (r1/r0)**nn)**kk
+        dgdr1 = -(g/r1)*( mm*(1+(r1/r0)**nn) + kk*nn*(r1/r0)**nn )/(1 + (r1/r0)**nn)
+        dgdtau = dgdr1 * dr1dtau * days # note: "days" factor for consistency of scaling!
+        # NG acceleration
+        aNG_ = g * A_
+        # matrix with partials
+        dadp = np.c_[g*u1_, g*u2_, g*u3_, dgdtau*A_]
+    return aNG_, dadp
+# Modified Kepler solver, universal variables formulation; useful references:
+# - Section 4.3 of Bate, Mueller, White 1971; 
+# - Section 4.5 of Battin 1999 (especially equations 4.81, 4.82, 4.83)
+def KeplerUniv(ro_,vo_,dt,mu):
+    # Stumpff function C(z)
+    def C(z):
+        if z > 0:
+            C = (1 - np.cos(np.sqrt(z)))/z
+        elif z < 0:
+            C = (np.cosh(np.sqrt(-z)) - 1)/(-z)
+        else:
+            C = 1/2
+        return C
+    # Stumpff function S(z)
+    def S(z):
+        if z > 0:
+            S = (np.sqrt(z) - np.sin(np.sqrt(z)))/np.sqrt(z)**3
+        elif z < 0:
+            S = (np.sinh(np.sqrt(-z)) - np.sqrt(-z))/np.sqrt(-z)**3
+        else:
+            S = 1/6
+        return S
+    # initializations
+    ro = np.linalg.norm(ro_)
+    vo = np.linalg.norm(vo_)
+    qo = np.dot(ro_,vo_)/np.sqrt(mu) # this is sigma_o
+    alpha = 2/ro - vo**2/mu
+    # initial guess for universal anomaly x
+    x = np.sqrt(mu)*np.abs(alpha)*dt
+    dx = 1
+    # Newton iteration to find x
+    while (np.abs(dx) > 1e-8):
+       z = alpha*x**2
+       F = x**3*S(z) + qo*x**2*C(z) + ro*x*(1-z*S(z)) - np.sqrt(mu)*dt
+       dFdx = x**2*C(z) + qo*x*(1-z*S(z)) + ro*(1-z*C(z))
+       dx = - F / dFdx
+       x = x + dx
+    r = dFdx
+    q = qo*(1-z*C(z)) + (1 - alpha*ro)*x*(1-z*S(z)) # this is sigma
+    drdt = np.sqrt(mu)*q/r
+    return r, drdt
 
 
 ### MAIN ----------------------------------------------------------------------
 if __name__ == "__main__":
 
-    print('Oumuamua, no non-grav. acc.')
-    RunFit('1I',5,15,30,np.array([]))
-    print('Oumuamua, with non-grav. acc. (radial)')
-    RunFit('1I',5,15,30,np.array([1e-12]),ng_acc='radial')
+    plt.ion()
 
-    print('RM 2003, no non-grav. acc.')
-    RunFit('523599',10,30,70,np.array([]))
-    print('RM 2003, with non-grav. acc. (RTN)')
-    RunFit('523599',10,30,70,np.array([1e-12,1e-12,1e-12]),ng_acc='RTN')
+    # 1998 P1
+    # no a_NG (aNG not provided, parms_ array passed empty):
+    plt.figure(1)
+    plt.clf()
+    RunFit('1998 P1',50,70,90,np.array([]))
+    # symmetric a_NG (function name passed as aNG, parms_ array of dimension 3):
+    plt.figure(2)
+    plt.clf()
+    RunFit('1998 P1', 50,70,90, np.array([5e-10,5e-10,5e-10]), aNG=NonGravAccel)
+    # with perihelion offset (parms_ array of dimension 4):
+    plt.figure(3)
+    plt.clf()
+    RunFit('1998 P1',50,70,90, np.array([5e-10,5e-10,5e-10,33.]), aNG=NonGravAccel)
+    plt.figure(4)
+    plt.clf()
+    RunFit('1998 P1',50,70,90, np.array([5e-10,5e-10,5e-10,56.]), aNG=NonGravAccel)
 
-    print('Kamo\'oaleva, gravity only')
-    RunFit('469219',120,190,250,np.array([]))
+    # 1999 J3
+    #RunFit('1999 J3',20,40,60,np.array([]))
+    #RunFit('1999 J3',20,40,60,np.array([5e-10,5e-10,5e-10]),aNG=NonGravAccel)
+    #RunFit('1999 J3',20,40,60,np.array([5e-10,5e-10,5e-10,50]),aNG=NonGravAccel)
 
-    print('Golevka, gravity only')
-    RunFit('6489',858,866,873,np.array([]),it_max=15)
+    # 1996 B2  
+    #RunFit('1996 B2',40,60,80,np.array([]))
+    #RunFit('1996 B2',40,60,80,np.array([5e-9,5e-9,5e-9]),aNG=NonGravAccel)
+    #RunFit('1996 B2',40,60,80,np.array([1e-9,1e-9,1e-9,2]),aNG=NonGravAccel)
 
+    # 'Oumuamua
+    #RunFit('1I',5,15,30,np.array([]))
+    #RunFit('1I',5,15,30,np.array([1e-12]),aNG=NonGravAccel)
+    #RunFit('1I',5,15,30,np.array([1e-12,1e-12,1e-12]),aNG=NonGravAccel)
