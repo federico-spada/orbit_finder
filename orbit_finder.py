@@ -509,12 +509,6 @@ def RunFit(obj_name,i1,i2,i3,parms_,aNG=None,it_max=9):
     ### preliminary orbit determination  
     r2_, v2_, _ = PreliminaryOrbitDetermination(et,ra,de,s_ra,s_de,RS,i1,i2,i3)
     et0 = et[i2]
-    ### to check final result
-    epoch = float(spice.et2utc(et0*days,'J', 10)[3:])
-    q = Horizons(obj_name, location='@sun', epochs=epoch)
-    vec = q.vectors(refplane='earth')
-    pos0_ = np.array([vec['x'][0], vec['y'][0], vec['z'][0]])
-    vel0_ = np.array([vec['vx'][0], vec['vy'][0], vec['vz'][0]])
     ### differential correction of the orbit
     # initialize first guess
     x0 = np.r_[r2_,v2_,parms_]
@@ -522,6 +516,11 @@ def RunFit(obj_name,i1,i2,i3,parms_,aNG=None,it_max=9):
     x, Cov, z, chi2, B, flag, u, X2 = DifferentialCorrection(et,ra,de,s_ra,s_de,RS,\
                                       et0,x0,aNG,it_max)
     # output results and check
+    epoch = float(spice.et2utc(et0*days,'J', 10)[3:])
+    q = Horizons(obj_name.split('_')[0], location='@sun', epochs=epoch)
+    vec = q.vectors(refplane='earth')
+    pos0_ = np.array([vec['x'][0], vec['y'][0], vec['z'][0]])
+    vel0_ = np.array([vec['vx'][0], vec['vy'][0], vec['vz'][0]])
     print('Differences with JPL Horizons values:')
     print( ('Delta r_0 = '+3*'%16.8e') % (pos0_[0]-x[0],pos0_[1]-x[1],pos0_[2]-x[2]) )
     print( ('Delta v_0 = '+3*'%16.8e') % (vel0_[0]-x[3],vel0_[1]-x[4],vel0_[2]-x[5]) )
@@ -625,24 +624,18 @@ def KeplerUniv(ro_,vo_,dt,mu):
 ### MAIN ----------------------------------------------------------------------
 if __name__ == "__main__":
 
-    plt.ion()
 
     # 1998 P1
     # no a_NG (aNG not provided, parms_ array passed empty):
-    plt.figure(1)
-    plt.clf()
     RunFit('1998 P1',50,70,90,np.array([]))
     # symmetric a_NG (function name passed as aNG, parms_ array of dimension 3):
-    plt.figure(2)
-    plt.clf()
     RunFit('1998 P1', 50,70,90, np.array([5e-10,5e-10,5e-10]), aNG=NonGravAccel)
     # with perihelion offset (parms_ array of dimension 4):
-    plt.figure(3)
-    plt.clf()
     RunFit('1998 P1',50,70,90, np.array([5e-10,5e-10,5e-10,33.]), aNG=NonGravAccel)
-    plt.figure(4)
-    plt.clf()
     RunFit('1998 P1',50,70,90, np.array([5e-10,5e-10,5e-10,56.]), aNG=NonGravAccel)
+    # pre- and post-perihelion arcs
+    RunFit('1998 P1_pre_perihelion',20,40,60,np.array([5e-8,5e-8,5e-8]),aNG=NonGravAccel)
+    RunFit('1998 P1_pst_perihelion',50,70,90,np.array([5e-8,5e-8,5e-8]),aNG=NonGravAccel)
 
     # 1999 J3
     #RunFit('1999 J3',20,40,60,np.array([]))
