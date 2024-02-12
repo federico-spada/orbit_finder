@@ -121,14 +121,16 @@ def LoadDataMPC(obsstat_file,objdata_file):
                 U = spice.pxform( 'ITRF93', 'J2000', eti )
                 R_ = U @ R0_
             RS = np.vstack((RS, R_+rE))
-            # uncertainties in RA, Decl: assume 10 arc sec
-            s_ra = np.append(s_ra, np.deg2rad(10/3600)) # rad
-            s_de = np.append(s_de, np.deg2rad(10/3600)) # rad
+            # uncertainties in RA, Decl: assume 2 arc sec
+            factor = np.cos(np.deg2rad(deo))
+            s_ra = np.append( s_ra, np.deg2rad(2/3600)*factor ) # rad
+            s_de = np.append( s_de, np.deg2rad(2/3600) ) # rad
     RS = np.delete(RS, 0, 0)
     # use information from dictionary of uncertainties:
     for key in uncertainty:
         ii = np.where(OC == key)[0]
-        s_ra[ii] = np.deg2rad(uncertainty[key]/3600) # arc sec to rad 
+        factor = np.cos(de[ii])
+        s_ra[ii] = np.deg2rad(uncertainty[key]/3600)*factor # arc sec to rad 
         s_de[ii] = np.deg2rad(uncertainty[key]/3600) # arc sec to rad 
     # change units to AU, days 
     RS = RS / AU
@@ -288,8 +290,8 @@ def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,aNG,kmax):
     return x, Cov, z, chi2, B, flag, u, X2
 
 def ResidualsAndPartials(et,ra,de,RS,et0,x,aNG):
-    rtol = 1e-8
-    atol = 1e-11
+    rtol = 1e-11
+    atol = 1e-13
     n = len(x)
     m = len(et)
     n_p = n-6  # number of parameters beyond initial state vector
@@ -443,7 +445,7 @@ def PlotResiduals(et,res_ra,s_ra,res_de,s_de,et0,x,flag,obj_name,scaled=False):
     else:
         plt.plot(tlf,3600*np.rad2deg(res_ra[not_flag]),'x',color='darkgray')
         plt.plot(tlt,3600*np.rad2deg(res_ra[flag]),'.',color='#00356B',label='R.A.')
-        plt.ylabel('R. A. Res. (arcsec)')
+        plt.ylabel('R. A. Res. (arc sec)')
         plt.ylim(min(3600*np.rad2deg(res_ra[flag])),max(3600*np.rad2deg(res_ra[flag])))
     plt.plot([tmin,tmax],[0,0],'r')
     plt.grid()
@@ -458,7 +460,7 @@ def PlotResiduals(et,res_ra,s_ra,res_de,s_de,et0,x,flag,obj_name,scaled=False):
     else:
         plt.plot(tlf,3600*np.rad2deg(res_de[not_flag]),'x',color='darkgray')
         plt.plot(tlt,3600*np.rad2deg(res_de[flag]),'.',color='#00356B',label='Decl.')
-        plt.ylabel('Decl. Res. (arcsec)')
+        plt.ylabel('Decl. Res. (arc sec)')
         plt.ylim(min(3600*np.rad2deg(res_de[flag])),max(3600*np.rad2deg(res_de[flag])))
     #plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
     #plt.xticks(rotation=15)
@@ -620,9 +622,23 @@ def KeplerUniv(ro_,vo_,dt,mu):
     drdt = np.sqrt(mu)*q/r
     return r, drdt
 
-
 ### MAIN ----------------------------------------------------------------------
 if __name__ == "__main__":
+
+    # 'Oumuamua
+    #RunFit('1I',5,15,30,np.array([]))
+    #RunFit('1I',5,15,30,np.array([1e-12]),aNG=NonGravAccel)
+    #RunFit('1I',5,15,30,np.array([1e-12,1e-12,1e-12]),aNG=NonGravAccel)
+
+    # RM 2003
+    #RunFit('523599',10,30,70,np.array([]))
+    #RunFit('523599',10,30,70,np.array([1e-12,1e-12,1e-12]), aNG=NonGravAccel)
+
+    # Golevka
+    #RunFit('6489',858,866,873,np.array([]),it_max=25)
+
+    # Kamo'oaleva
+    #RunFit('469219',120,190,250,np.array([]))
 
 
     # 1998 P1
@@ -647,7 +663,3 @@ if __name__ == "__main__":
     #RunFit('1996 B2',40,60,80,np.array([5e-9,5e-9,5e-9]),aNG=NonGravAccel)
     #RunFit('1996 B2',40,60,80,np.array([1e-9,1e-9,1e-9,2]),aNG=NonGravAccel)
 
-    # 'Oumuamua
-    #RunFit('1I',5,15,30,np.array([]))
-    #RunFit('1I',5,15,30,np.array([1e-12]),aNG=NonGravAccel)
-    #RunFit('1I',5,15,30,np.array([1e-12,1e-12,1e-12]),aNG=NonGravAccel)
