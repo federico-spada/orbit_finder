@@ -538,7 +538,7 @@ def RunFit(obj_name,i1,i2,i3,parms_,forces=all_forces,it_max=9):
     ScreenOutput(et0,x,Cov)
     ### plot final residuals
     res_ra, res_de = z[:len(et)], z[len(et):]
-    PlotResiduals(et,res_ra,s_ra,res_de,s_de,flag,scaled=True)
+    PlotResiduals(et,res_ra,s_ra,res_de,s_de,et0,x,flag,obj_name,scaled=False)
     ### release the spice Kernels 
     spice.kclear()
 
