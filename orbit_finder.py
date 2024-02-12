@@ -109,14 +109,16 @@ def LoadDataMPC(obsstat_file,objdata_file):
                 U = spice.pxform( 'ITRF93', 'J2000', eti )
                 R_ = U @ R0_
             RS = np.vstack((RS, R_+rE))
-            # uncertainties in RA, Decl: assume 10 arc sec
-            s_ra = np.append(s_ra, np.deg2rad(10/3600)) # rad
-            s_de = np.append(s_de, np.deg2rad(10/3600)) # rad
+            # uncertainties in RA, Decl: assume 2 arc sec
+            factor = np.cos(np.deg2rad(deo))
+            s_ra = np.append( s_ra, np.deg2rad(2/3600)*factor ) # rad
+            s_de = np.append( s_de, np.deg2rad(2/3600) ) # rad
     RS = np.delete(RS, 0, 0)
     # use information from dictionary of uncertainties:
     for key in uncertainty:
         ii = np.where(OC == key)[0]
-        s_ra[ii] = np.deg2rad(uncertainty[key]/3600) # arc sec to rad 
+        factor = np.cos(de[ii])
+        s_ra[ii] = np.deg2rad(uncertainty[key]/3600)*factor # arc sec to rad 
         s_de[ii] = np.deg2rad(uncertainty[key]/3600) # arc sec to rad 
     # change units to AU, days 
     RS = RS / AU
@@ -258,8 +260,8 @@ def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,forces,kmax):
         m_rej = min(len(i_mrk), int(frac*m_use))
         X2_mrk = np.flip(np.sort(X2[i_mrk]))
         if len(i_mrk) > 0:
-            kkk =[np.where(X2 == X2_m)[0][0] for X2_m in X2[i_mrk][:m_rej]] 
-            flag[kkk] = False 
+            k1 =[np.where(X2 == X2_m)[0][0] for X2_m in X2[i_mrk][:m_rej]] 
+            flag[k1] = False 
         # update total number of epochs to be used in the fit
         m_use = sum(flag)
         ### convergence metrics
@@ -419,56 +421,78 @@ def Propagate(x,et0,et,tau,forces):
 
 
 ### PLOT AND OUTPUT -----------------------------------------------------------
-def PlotResiduals(et,res_ra,s_ra,res_de,s_de,flag,scaled=False):
-    #plt.figure()
+def PlotResiduals(et,res_ra,s_ra,res_de,s_de,et0,x,flag,obj_name,scaled=False):
+    not_flag = np.logical_not(flag)
+    tlf = [datetime.fromisoformat(spice.et2utc(eti*days,'ISOC', 0)) \
+           for eti in et[not_flag]]
+    tlt = [datetime.fromisoformat(spice.et2utc(eti*days,'ISOC', 0)) \
+           for eti in et[flag]]
     plt.ion()
     plt.clf()
-    not_flag = np.logical_not(flag)
-    tlf = [datetime.fromisoformat(spice.et2utc(eti*days,'ISOC', 0)) for eti in et[not_flag]]
-    tlt = [datetime.fromisoformat(spice.et2utc(eti*days,'ISOC', 0)) for eti in et[flag]]
-    plt.subplot(211)
+    plt.subplot(311)
+    plt.title(obj_name)
+    # heliocentric distance
+    yt, _, _ = Propagate(x,et0,et[flag],np.zeros(len(et[flag])),['SUN', 'PLANETS', 'ASTEROIDS'])
+    yf, _, _ = Propagate(x,et0,et[not_flag],np.zeros(len(et[not_flag])),['SUN', 'PLANETS', 'ASTEROIDS'])
+    rht = np.linalg.norm(yt[:,:3],axis=1)
+    rhf = np.linalg.norm(yf[:,:3],axis=1)
+    plt.plot(tlf,rhf,'x',color='darkgray')
+    plt.plot(tlt,rht,'.',color='#00356B')
+    plt.gca().xaxis.set_ticklabels([])
+    plt.ylabel('Helioc. Dist. (AU)')
+    plt.grid()
+    plt.subplot(312)
+    tmin = datetime.fromisoformat(spice.et2utc(min(et)*days,'ISOC', 0))
+    tmax = datetime.fromisoformat(spice.et2utc(max(et)*days,'ISOC', 0))
     if scaled:
         plt.plot(tlf,res_ra[not_flag]/s_ra[not_flag],'x',color='darkgray')
         plt.plot(tlt,res_ra[flag]/s_ra[flag],'.',color='#00356B',label='R.A.')
-        plt.ylabel('R. A. Residuals ($\sigma$)') 
+        plt.ylabel('R. A. Res. ($\sigma$)') 
         #plt.ylim(min(res_ra[flag]/s_ra[flag]),max(res_ra[flag]/s_ra[flag]))
         plt.ylim(-12,12)
     else:
         plt.plot(tlf,3600*np.rad2deg(res_ra[not_flag]),'x',color='darkgray')
         plt.plot(tlt,3600*np.rad2deg(res_ra[flag]),'.',color='#00356B',label='R.A.')
-        plt.ylabel('R. A. Residuals (arcsec)')
+        plt.ylabel('R. A. Res. (arc sec)')
         plt.ylim(min(3600*np.rad2deg(res_ra[flag])),max(3600*np.rad2deg(res_ra[flag])))
+    plt.plot([tmin,tmax],[0,0],'r')
     plt.grid()
     plt.gca().xaxis.set_ticklabels([])
-    plt.subplot(212)
+    plt.subplot(313)
     if scaled:
         plt.plot(tlf,res_de[not_flag]/s_de[not_flag],'x',color='darkgray')
         plt.plot(tlt,res_de[flag]/s_de[flag],'.',color='#00356B',label='Decl.')
-        plt.ylabel('Decl. Residuals ($\sigma$)')
+        plt.ylabel('Decl. Res. ($\sigma$)')
         #plt.ylim(min(res_de[flag]/s_de[flag]),max(res_de[flag]/s_de[flag]))
         plt.ylim(-12,12)
     else:
         plt.plot(tlf,3600*np.rad2deg(res_de[not_flag]),'x',color='darkgray')
         plt.plot(tlt,3600*np.rad2deg(res_de[flag]),'.',color='#00356B',label='Decl.')
-        plt.ylabel('Decl. Residuals (arcsec)')
+        plt.ylabel('Decl. Res. (arc sec)')
         plt.ylim(min(3600*np.rad2deg(res_de[flag])),max(3600*np.rad2deg(res_de[flag])))
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
-    plt.xticks(rotation=15)
+    #plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+    #plt.xticks(rotation=15)
+    plt.plot([tmin,tmax],[0,0],'r')
     plt.xlabel('Date (UTC)')
+    locator = mdates.AutoDateLocator()
+    formatter = mdates.ConciseDateFormatter(locator)
+    plt.gca().xaxis.set_major_locator(locator)
+    plt.gca().xaxis.set_major_formatter(formatter)
     plt.grid()
-    plt.tight_layout()    
+    plt.tight_layout()
 
 def ScreenOutput(et0,x,Cov):
     names = ['x0 ','y0 ','z0 ','vx0','vy0','vz0','A1 ','A2 ','A3 ']
-    units = ['AU','AU','AU','AU/day','AU/day','AU/day',
-             'AU/day^2','AU/day^2','AU/day^2']
+    units = ['[AU]','[AU]','[AU]','[AU/day]','[AU/day]','[AU/day]',
+             '[1e-8 AU/day^2]','[1e-8 AU/day^2]','[1e-8 AU/day^2]']
     s_x = np.sqrt(np.diagonal(Cov)) 
     print(' Best-fitting parameters:')
     for k in range(len(x)):
-        if k <= 5:
-            print('    %s = %13.10f +/- %13.10f %s' % (names[k], x[k], s_x[k], units[k]))
+        if k > 5:
+            xx, ss = x[k]*1e8, s_x[k]*1e8
         else:
-            print('    %s = %13.6e +/- %13.6e %s' % (names[k], x[k], s_x[k], units[k]))
+            xx, ss = x[k], s_x[k]
+        print('    %s = %13.10f +/- %13.10f %s' % (names[k], xx, ss, units[k]))
     U = spice.pxform( 'J2000', 'ECLIPJ2000', et0*days )
     r_, v_ = U @ x[0:3], U @ x[3:6]
     elts = spice.oscelt(np.r_[r_, v_], et0*days, mu_s)
@@ -483,8 +507,8 @@ def ScreenOutput(et0,x,Cov):
 
 
 
-
-def RunFit(obj_name,i1,i2,i3,parm_,forces=all_forces,it_max=5):
+### DRIVER FUNCTION -----------------------------------------------------------
+def RunFit(obj_name,i1,i2,i3,parms_,forces=all_forces,it_max=9):
     ### provide all Kernels via meta-Kernel
     spice.furnsh('spice.mkn')
     ### load data
@@ -495,24 +519,21 @@ def RunFit(obj_name,i1,i2,i3,parm_,forces=all_forces,it_max=5):
     ### preliminary orbit determination  
     r2_, v2_, _ = PreliminaryOrbitDetermination(et,ra,de,s_ra,s_de,RS,i1,i2,i3)
     et0 = et[i2]
-    ### to check final result
+    ### differential correction of the orbit
+    # initialize first guess
+    x0 = np.r_[r2_,v2_,parms_]
+    # run differential correction
+    x, Cov, z, chi2, B, flag, u, X2 = DifferentialCorrection(et,ra,de,s_ra,s_de,RS,\
+                                      et0,x0,forces,it_max)
+    # output results and check
     epoch = float(spice.et2utc(et0*days,'J', 10)[3:])
-    q = Horizons(obj_name, location='@sun', epochs=epoch)
+    q = Horizons(obj_name.split('_')[0], location='@sun', epochs=epoch)
     vec = q.vectors(refplane='earth')
     pos0_ = np.array([vec['x'][0], vec['y'][0], vec['z'][0]])
     vel0_ = np.array([vec['vx'][0], vec['vy'][0], vec['vz'][0]])
-    ### differential correction of the orbit
-    # initialize first guess
-    x0 = np.r_[r2_,v2_,parm_]
-    # run differential correction
-    x, Cov, z, chi2, B, flag, u, X2 = DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,forces,it_max)
-    # output results and check
-    #print('Converged solution:')
-    #print((6*'%16.8e') % (x[0], x[1], x[2], x[3], x[4], x[5]))
-    #print('JPL Horizons values for comparison:')
-    #print((6*'%16.8e') % (pos0_[0], pos0_[1], pos0_[2], vel0_[0], vel0_[1], vel0_[2]))
     print('Differences with JPL Horizons values:')
-    print((6*'%16.8e') % (pos0_[0]-x[0],pos0_[1]-x[1],pos0_[2]-x[2],vel0_[0]-x[3],vel0_[1]-x[4],vel0_[2]-x[5]))
+    print( ('Delta r_0 = '+3*'%16.8e') % (pos0_[0]-x[0],pos0_[1]-x[1],pos0_[2]-x[2]) )
+    print( ('Delta v_0 = '+3*'%16.8e') % (vel0_[0]-x[3],vel0_[1]-x[4],vel0_[2]-x[5]) )
     ### screen output
     ScreenOutput(et0,x,Cov)
     ### plot final residuals
@@ -525,19 +546,19 @@ def RunFit(obj_name,i1,i2,i3,parm_,forces=all_forces,it_max=5):
 ### MAIN ----------------------------------------------------------------------
 if __name__ == "__main__":
 
-    print('Oumuamua, no non-grav. acc.')
-    RunFit('1I',5,15,30,np.array([]))
-    print('Oumuamua, with non-grav. acc.')
-    RunFit('1I',5,15,30,np.array([1e-12,1e-12,1e-12]))
+    # 'Oumuamua
+    #RunFit('1I',5,15,30,np.array([]))
+    #RunFit('1I',5,15,30,np.array([1e-12]))
+    #RunFit('1I',5,15,30,np.array([1e-12,1e-12,1e-12]))
 
-    print('RM 2003, no non-grav. acc.')
-    RunFit('523599',10,30,70,np.array([]))
-    print('RM 2003, with non-grav. acc.')
+    # RM 2003
+    #RunFit('523599',10,30,70,np.array([]))
     RunFit('523599',10,30,70,np.array([1e-12,1e-12,1e-12]))
 
-    print('Kamo\'oaleva, gravity only')
-    RunFit('469219',120,190,250,np.array([]))
+    # Golevka
+    #RunFit('6489',858,866,873,np.array([]),it_max=25)
 
-    print('Golevka, gravity only')
-    RunFit('6489',858,866,873,np.array([]),it_max=15)
+    # Kamo'oaleva
+    #RunFit('469219',120,190,250,np.array([]))
+
 
