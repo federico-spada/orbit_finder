@@ -553,10 +553,10 @@ if __name__ == "__main__":
 
     # RM 2003
     #RunFit('523599',10,30,70,np.array([]))
-    RunFit('523599',10,30,70,np.array([1e-12,1e-12,1e-12]))
+    #RunFit('523599',10,30,70,np.array([1e-12,1e-12,1e-12]))
 
     # Golevka
-    #RunFit('6489',858,866,873,np.array([]),it_max=25)
+    RunFit('6489',858,866,873,np.array([]),it_max=25)
 
     # Kamo'oaleva
     #RunFit('469219',120,190,250,np.array([]))
