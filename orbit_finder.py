@@ -575,7 +575,7 @@ def derivs(t,y,parms_,aNG):
 
 
 # PLOTTING OUTPUT -------------------------------------------------------------
-def PlotResiduals(et,z,s_ra,s_de,RS,et0,propagator,prop_args,flag,x,title,fname):
+def PlotResiduals(et,z,s_ra,s_de,RS,et0,propagator,prop_args,flag,x,title):
     res_ra = z[:len(et)]
     res_de = z[len(et):]
     not_flag = np.logical_not(flag)
@@ -619,9 +619,8 @@ def PlotResiduals(et,z,s_ra,s_de,RS,et0,propagator,prop_args,flag,x,title,fname)
     plt.gca().set_xbound(tmin, tmax)
     plt.grid()
     plt.tight_layout()
-    plt.savefig(fname)
 
-def PlotHistRes(z,s_ra,s_de,flag,title,fname):     
+def PlotHistRes(z,s_ra,s_de,flag,title):     
     res_ra = z[:len(flag)]
     res_de = z[len(flag):]
     plt.subplot(121)
@@ -635,5 +634,4 @@ def PlotHistRes(z,s_ra,s_de,flag,title,fname):
     plt.xlabel('Decl. Res. (\")')
     plt.ylabel('Count')
     plt.tight_layout()
-    plt.savefig(fname)
 
