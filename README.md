@@ -1,3 +1,5 @@
+--- THIS BRANCH IS OBSOLETE ---
+
 # orbit_finder
 
 Python orbit determination code. Works with astrometric data from the Minor Planet Center (MPC) database. 
