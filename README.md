@@ -5,6 +5,7 @@ Python orbit determination code. Works with astrometric data from the Minor Plan
 ## External dependencies
 * NumPy 
 * Matplotlib
+* seaborn
 * astroquery.jplhorizons (part of Astropy): https://astroquery.readthedocs.io/en/latest/jplhorizons/jplhorizons.html
 * SpiceyPy: https://spiceypy.readthedocs.io/en/stable/
 * REBOUND: https://rebound.readthedocs.io/en/latest/ 
@@ -18,7 +19,7 @@ Python orbit determination code. Works with astrometric data from the Minor Plan
   (not part of this repository; available from: https://assist.readthedocs.io/en/stable/installation/)
 * Input data: 
     1. MPC observatory codes and geodatum "mpc_obs.txt" (cf. https://www.minorplanetcenter.net/iau/lists/ObsCodes.html)
-    2. File with astrometric observations in MPC format; the following are provided for testing purposes: 1I.txt; 469219.txt; 523599.txt; 6489.txt
+    2. File with astrometric observations in MPC format; some are provided for testing and demonstration purposes.
 
 ## Description
 The orbit determination procedure is described at length in https://arxiv.org/abs/2304.06964, and the references given there,
@@ -31,25 +32,15 @@ The differential correction procedure implements automatic outlier rejection (ba
 2003, Icarus, 166, 248), and solves for the magnitude of the components of the non-gravitational acceleration 
 (if requested by the user).
 
-This is the main branch, in which the integration of the equations of motion and of the corresponding variational equations 
-is performed using REBOUND/ASSIST. A separate branch in which the numerical integration of the trajectory is accomplished
-using the initial value problem solver "solve_ivp" (part of ScyPy), is available (check out "scipy-version"). The
-scipy-version allows full control on the implementation of the equations of motion (terms added/removed, parametrizations), 
+Two propagators are available for the integration of the equations of motion and of the corresponding variational equations: 
+1. Propagator based on REBOUND/ASSIST;
+2. Propagator based on scipy.integrate.solve_ivp; a fully customizable implementation of the equations of motion is provided
+   in this case; accepts external function implementing non-gravitational acceleration (see an example in non_grav_accel.py).
+The scipy-version allows full control on the implementation of the equations of motion (terms added/removed, parametrizations), 
 but this freedom comes with a performance cost. 
 
 ## Usage
-Some example use cases are provided and run through the RunFit function. 
-A detailed description of the input for the use cases is as follows:
-* obj_name: string with the name of the object whose orbit is to be fit; a .txt file with matching name 
-  containing astrometric data (in MPC format) should be present in the working directory
-* i1, i2, i3: integers, specifying the indices of the three epochs to be used in the preliminary orbit determination; 
-  in general, the choice of these three epochs is up to the user, and it is one of the few cases where human 
-  intervention and case-by-case judgment is required
-* parm_: numpy array, should contain up to three elements as initial guess for the radial, tangential, normal
-  components, respectively, of the non-gravitational acceleration (see ASSIST docs for details); set to empty
-  numpy array to switch off the non-gravitational acceleration in the differential correction
-* forces: list of strings, useful to interact with the ASSIST capability to switch on/off certain force components
-  in the equations of motion
+Some example use cases are detailed in sample_main.py. 
 
 ## Contributors
 Federico Spada

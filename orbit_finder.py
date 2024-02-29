@@ -1,31 +1,49 @@
-# Federico Spada --- 2023/11/21
-
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime
-from astroquery.jplhorizons import Horizons
 import spiceypy as spice
-import rebound
+import rebound 
 import assist
-
+from scipy.integrate import solve_ivp
+from extensisq import SWAG
+import seaborn as sns
 
 # constants 
 Re = 6378.1366 # km
 AU   = 1.495978707e8 # km
+cc = 299792.458 # km/s  
 days = 86400 # s 
 mu_s = 132712440041.279419 # km^3/s^2
 
-# for assist
+# for propagation with SciPy ode solver:
+# gravitational parameters of planets (DE440)
+mu_p = np.array([22031.868551, 324858.592000, 398600.435507, 42828.375816, \
+                 126712764.100000, 37940584.841800, 5794556.400000, \
+                 6836527.100580, 975.500000, 4902.800118])
+# gravitational parameter of asteroids (DE440)
+mu_a = np.array([62.628889, 13.665878, 1.920571, 17.288233, 0.646878, 1.139872,\
+                 5.625148, 2.023021, 1.589658, 0.797801, 2.683036, 0.938106, \
+                 2.168232, 1.189808, 3.894483, 2.830410])
+# names of planets in SPICE Kernel
+tgP = ['1', '2', '399', '4', '5', '6', '7', '8', '9', '301']
+# names of asteroids in SPICE Kernel
+tgA = ['2000001', '2000002', '2000003', '2000004', '2000006', '2000007', \
+       '2000010', '2000015', '2000016', '2000029', '2000052', '2000065', \
+       '2000087', '2000088', '2000511', '2000704']
+
+# for propagation with rebound/assist:
 all_forces = ['SUN', 'PLANETS', 'ASTEROIDS', 'NON_GRAVITATIONAL',
               'EARTH_HARMONICS', 'SUN_HARMONICS', 'GR_EIH']
 assist_path = '/Users/fs255/rebound_assist/data/'
-
-# scaled to the same units used by assist
+    
+# use everywhere units of AU, days
 mu_s = mu_s * days**2/AU**3
-cc = spice.clight() * days/AU
+mu_p = mu_p * days**2/AU**3
+mu_a = mu_a * days**2/AU**3
+cc = cc * days/AU
 
-# Veres et al. 2017
+# uncertainties for a selection of observatories estimated by Veres et al. 2017
 uncertainty = { '703': 1.0 , '691': 0.6 , '644': 0.6 ,
                 '704': 1.0 , 'G96': 0.5 , 'F51': 0.2 , 'G45': 0.6 , '699': 0.8 ,
                 'D29': 0.75, 'C51': 1.0 , 'E12': 0.75, '608': 0.6 , 'J75': 1.0 ,
@@ -34,11 +52,11 @@ uncertainty = { '703': 1.0 , '691': 0.6 , '644': 0.6 ,
                 'Q64': 0.4 , 'V37': 0.4 , 'W84': 0.4 , 'W85': 0.4 , 'W86': 0.4 ,
                 'W87': 0.4 , 'K91': 0.4 , 'E10': 0.4 , 'F65': 0.4 , 'Y28': 0.3 ,
                 '568': 0.25, 'T09': 0.1 , 'T12': 0.1 , 'T14': 0.1 , '309': 0.3 ,
-                '250': 0.05} # add HST
+                '250': 0.05, 'C57': 0.05 } # add HST, TESS
 
 
 ### LOAD DATA -----------------------------------------------------------------
-def LoadDataMPC(obsstat_file,objdata_file):
+def LoadDataMPC(obsstat_file,objdata_file,start_date=None,end_date=None):
     # load locations of observing stations
     obss = np.array([])
     lons = np.array([])
@@ -94,13 +112,13 @@ def LoadDataMPC(obsstat_file,objdata_file):
             # heliocentric position of Earth to observation point vector
             rE, _ = spice.spkpos('399', eti, 'J2000', 'NONE', '10')
             # geocentric position of observing station
-            if code == '250':
+            if code == '250' or code=='C57':
                 # for HST, data is in the file 
                 l1 = f.readline()
                 X = float(l1[34:42].replace(' ',''))
-                Y = float(l1[46:54].replace(' ','')) 
+                Y = float(l1[46:54].replace(' ',''))
                 Z = float(l1[58:66].replace(' ',''))
-                R_ = np.array([X,Y,Z]) 
+                R_ = np.array([X,Y,Z])
             else:
                 # for other observatories, must be calculated from geodetic data
                 io = np.where(obss == code)[0]
@@ -120,16 +138,32 @@ def LoadDataMPC(obsstat_file,objdata_file):
         factor = np.cos(de[ii])
         s_ra[ii] = np.deg2rad(uncertainty[key]/3600)*factor # arc sec to rad 
         s_de[ii] = np.deg2rad(uncertainty[key]/3600) # arc sec to rad 
+    # (optional) restrict epochs to the range between start_date and end_date
+    if not start_date:
+        start_date = spice.et2utc(et[0],'ISOC',0)
+        i_start = 0
+    else:
+        et_start = spice.str2et(start_date)
+        i_start = np.where(et >= et_start)[0][0]
+    if not end_date:
+        end_date = spice.et2utc(et[-1],'ISOC',0)
+        i_end = len(et)        
+    else:
+        et_end = spice.str2et(end_date)
+        i_end = np.where(et <= et_end)[0][-1]
+    print('Using data between', start_date, ' and', end_date, 
+          '; range:', i_start, '-' ,i_end)
+    # all epochs outside this range will be dropped:
+    msk = range(i_start,i_end)
     # change units to AU, days 
     RS = RS / AU
     et = et / days
-    return et, ra, de, s_ra, s_de, RS, JD, OC
-
+    return et[msk], ra[msk], de[msk], s_ra[msk], s_de[msk], RS[msk], JD[msk], OC[msk]
 
 
 
 ### PRELIMINARY ORBIT DETERMINATION -------------------------------------------
-def PreliminaryOrbitDetermination(et,ra,de,s_ra,s_de,RS,i1,i2,i3):
+def InitOrbDet(et,ra,de,s_ra,s_de,RS,i1,i2,i3):
     taui = et[i1]-et[i2], et[i3]-et[i2], et[i3]-et[i1]
     Ri_ = RS[i1,:], RS[i2,:], RS[i3,:]
     e1_ = spice.radrec(1.,ra[i1],de[i1])
@@ -139,7 +173,7 @@ def PreliminaryOrbitDetermination(et,ra,de,s_ra,s_de,RS,i1,i2,i3):
     r2i = 3.0
     kmax = 50
     tol = 1e-6
-    r2_, v2_, k = AnglesOnlyPOD(taui,Ri_,ei_,mu_s,r2i,kmax,tol)
+    r2_, v2_, k = AnglesOnlyIOD(taui,Ri_,ei_,mu_s,r2i,kmax,tol)
     if k < kmax-1:
        print('Preliminary orbit determination converged in %i iterations' % k)
        exit_code = 0
@@ -149,7 +183,7 @@ def PreliminaryOrbitDetermination(et,ra,de,s_ra,s_de,RS,i1,i2,i3):
     return r2_, v2_, exit_code
 
 # Reference: Bate, Mueller, White (1971), Section 5.8, page 271
-def AnglesOnlyPOD(taui,Ri_,Li_,mu_s,r2i,kmax,tol):
+def AnglesOnlyIOD(taui,Ri_,Li_,mu_s,r2i,kmax,tol):
     tau1, tau3, tau = taui
     R1_, R2_, R3_ = Ri_
     L1_, L2_, L3_ = Li_
@@ -197,7 +231,7 @@ def AnglesOnlyPOD(taui,Ri_,Li_,mu_s,r2i,kmax,tol):
 ### DIFFERENTIAL CORRECTION OF THE ORBIT --------------------------------------
 # References: Farnocchia et al. (2015) (general method); 
 #             Carpino et al. (2003) (for outliers rejection)
-def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,forces,kmax):
+def DiffCorr(et,ra,de,s_ra,s_de,RS,et0,x0,propagator,prop_args,max_iter):
     # parameters
     X2_rjb = 8.   # base rejection threshold
     X2_rec = 7.   # recovery threshold
@@ -210,15 +244,15 @@ def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,forces,kmax):
     W = np.diag(1./s**2)
     # initializations 
     x = x0
-    z, B = ResidualsAndPartials(et,ra,de,RS,et0,x,forces)
-    Cov = np.linalg.inv(B.T @ W @ B) 
+    z, B = ResidualsAndPartials(et,ra,de,RS,et0,x,propagator,prop_args)
+    Cov = np.linalg.inv(B.T @ W @ B)
     flag = np.repeat(True,m) # True for epochs included in the fit
     X2 = np.zeros(m)
-    m_use = m  
+    m_use = m
     # begin differential correction iteration
     print('Differential correction begins.')
     print('#iter   red.chisq.   metric      ||dx/x||        #rec   #rej  #use frac')
-    for k in range(kmax):
+    for k in range(max_iter):
         ### least-squares fit here
         #flag = np.repeat(True,m) # DEBUGGING ONLY 
         # solve normal equations and apply corrections to x:
@@ -233,7 +267,7 @@ def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,forces,kmax):
         # update parameters vector:
         x = x + dx
         # get residuals and design matrix for updated x
-        z, B = ResidualsAndPartials(et,ra,de,RS,et0,x,forces)
+        z, B = ResidualsAndPartials(et,ra,de,RS,et0,x,propagator,prop_args)
         # calculate post-fit residuals
         u = ( np.eye(2*m) - B @ Cov @ B.T @ W ) @ z
         ### handle epoch selection based on chi-square
@@ -254,14 +288,14 @@ def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,forces,kmax):
         # recover epochs 
         i_rec = np.where((flag == False) & (X2 < X2_rec))[0]
         flag[i_rec] = True
-        m_rec = len(i_rec)        
+        m_rec = len(i_rec)
         # reject epochs
         i_mrk = np.where((flag == True) & (X2 > X2_rej))[0]
         m_rej = min(len(i_mrk), int(frac*m_use))
         X2_mrk = np.flip(np.sort(X2[i_mrk]))
         if len(i_mrk) > 0:
-            k1 =[np.where(X2 == X2_m)[0][0] for X2_m in X2[i_mrk][:m_rej]] 
-            flag[k1] = False 
+            k1 =[np.where(X2 == X2_m)[0][0] for X2_m in X2[i_mrk][:m_rej]]
+            flag[k1] = False
         # update total number of epochs to be used in the fit
         m_use = sum(flag)
         ### convergence metrics
@@ -270,29 +304,22 @@ def DifferentialCorrection(et,ra,de,s_ra,s_de,RS,et0,x0,forces,kmax):
         chi2v = chi2/(2*m_use-n)
         metric = np.sqrt((dx @ (B[mask,:].T @ W[mask,:][:,mask] @ B[mask,:]) @ dx)/n)
         ### screen output (comment out or leave if appropriate)
-        print('%4i   %12.6e %12.6e %12.6e %6i %6i %6i %4.2f' % (k, chi2v, metric, 
+        print('%4i   %12.6e %12.6e %12.6e %6i %6i %6i %4.2f' % (k, chi2v, metric,
                np.linalg.norm(dx), m_rec, m_rej, m_use, m_use/m))
         ### stopping condition
         if metric < 0.5 or chi2v < 0.5 or np.linalg.norm(dx/x) < 5e-8:
             break
     return x, Cov, z, chi2, B, flag, u, X2
 
-def ResidualsAndPartials(et,ra,de,RS,et0,x,forces):
+def ResidualsAndPartials(et,ra,de,RS,et0,x,propagator,prop_args):
     n = len(x)
     m = len(et)
-    ### iteration needed to account for light travel time:
-    tau = np.zeros(m)
-    for j in range(2):
-        yy, PP, SS = Propagate(x,et0,et,tau,forces)
-        for i in range(m):
-            r_ = yy[i,:3]
-            R_ = RS[i,:]
-            # note speed of light in vacuum, cc, is in AU/days 
-            tau[i] = np.linalg.norm(r_-R_)/cc
-    ###
+    # call propagator function; its name is passed as input ("propagator")
+    # Note: "propagator" also takes care of light travel time iteration
+    yy, PP, SS = propagator(x,et0,et,RS,prop_args)
     # initialize residuals and their partials matrix for current x
     B = np.zeros((2*m,n))
-    z = np.zeros(2*m)   
+    z = np.zeros(2*m)
     # fill in B and z (Escobal 1976 formulae)
     for i in range(m):
         r_ = yy[i,:3]
@@ -312,15 +339,32 @@ def ResidualsAndPartials(et,ra,de,RS,et0,x,forces):
         B[i  ,:] = np.r_[ A_, np.zeros(3) ]/rho @ np.block([P, S])
         B[m+i,:] = np.r_[ D_, np.zeros(3) ]/rho @ np.block([P, S])
         # fill residual vector
-        z[i  ] = np.dot(dL_,A_) 
+        z[i  ] = np.dot(dL_,A_)
         z[m+i] = np.dot(dL_,D_)
     return z, B
 
-def Propagate(x,et0,et,tau,forces):
-    eps = 1e-6
+
+
+### TRAJECTORY PROPAGATION ----------------------------------------------------
+# Two propagators are available, based on REBOUND/ASSIST and SciPy solve_ivp
+# FIRST OPTION: use ASSIST (faster, probably more accurate, but less flexible)
+def PropagateAssist(x,et0,et,RS,forces):
+    ### iteration needed to account for light travel time:
+    m = len(et)
+    tau = np.zeros(m)
+    for j in range(2):
+        yy, PP, SS = RunAssist(x,et0,et,tau,forces)
+        for i in range(m):
+            r_ = yy[i,:3]
+            R_ = RS[i,:]
+            # note speed of light in vacuum, cc, is in AU/days 
+            tau[i] = np.linalg.norm(r_-R_)/cc
+    return yy, PP, SS
+        
+def RunAssist(x,et0,et,tau,forces):
     t0 = et0
     t = et - tau
-    p_  = x[6:] 
+    p_  = x[6:]
     # set up rebound simulation and ephemerides extension
     ephem = assist.Ephem(assist_path+'linux_p1550p2650.440',
                          assist_path+'sb441-n16.bsp')
@@ -356,8 +400,9 @@ def Propagate(x,et0,et,tau,forces):
         y[i,0:3] = np.array(sim.particles[0].xyz) - np.array(ref.xyz)
         y[i,3:6] = np.array(sim.particles[0].vxyz)
     sim = None
-    ### set of integration with varying p_ components, to evaluate the
+    ### set up integration with varying p_ components, to evaluate the
     ### sensitivity matrix
+    eps = 1e-6
     S = np.zeros((m,6,nparms))
     y1 = np.zeros(6)
     for k in range(nparms):
@@ -419,146 +464,176 @@ def Propagate(x,et0,et,tau,forces):
         P[i,:,5] = np.r_[ vp_vz0.particles[0].xyz, vp_vz0.particles[0].vxyz ]
     return y, P, S
 
+# SECOND OPTION: integrate the equations of motion with the SciPy ode solver
+# "solve_ivp"; slower option, but fully customizable equations (see "derivs")
+def PropagateSciPy(x,et0,et,RS,aNG):
+    rtol = 1e-11
+    atol = 1e-13
+    n = len(x)
+    m = len(et)
+    n_p = n-6  # number of parameters beyond initial state vector
+    r0_, v0_, parms_ = x[0:3], x[3:6], x[6:]
+    # form initial conditions for ODE integrator
+    y0 = np.concatenate([r0_, v0_, np.eye(6).flatten(), np.zeros((6,n_p)).flatten()])
+    # forward integration from et0 to et[-1]
+    tspan_f = [et0, et[-1]]
+    sol_f = solve_ivp(derivs,tspan_f,y0,method=SWAG,args=(parms_,aNG),
+            rtol=rtol,atol=atol,dense_output=True)
+    # backward integration from et0 to et[0]
+    tspan_b = [et0, et[0]]
+    sol_b = solve_ivp(derivs,tspan_b,y0,method=SWAG,args=(parms_,aNG),
+            rtol=rtol,atol=atol,dense_output=True)
+    ii_f = np.where(et >  et0)[0]
+    ii_b = np.where(et <= et0)[0]
+    ### iteration needed to account for light travel time:
+    tau = np.zeros(m)
+    for j in range(2):
+        teval_b = et[ii_b]-tau[ii_b]
+        teval_f = et[ii_f]-tau[ii_f]
+        sol = np.r_[sol_b.sol(teval_b).T, sol_f.sol(teval_f).T]
+        for i in range(m):
+            r_ = sol[i,:3]
+            R_ = RS[i,:]
+            # note speed of light in vacuum, cc, is in AU/days 
+            tau[i] = np.linalg.norm(r_-R_)/cc
+    # prepare output
+    yy = np.reshape(sol[:,  :6],(m,6))
+    PP = np.reshape(sol[:,6:42],(m,6,6))
+    SS = np.reshape(sol[:,42: ],(m,6,n_p))
+    return yy, PP, SS
 
-### PLOT AND OUTPUT -----------------------------------------------------------
-def PlotResiduals(et,res_ra,s_ra,res_de,s_de,et0,x,flag,obj_name,scaled=False):
+# force model and linearization: see Montenbruck & Gill 2005, Chapters 3 and 7, resp.
+def derivs(t,y,parms_,aNG):
+    r_ = y[0:3]
+    v_ = y[3:6]
+    r = np.linalg.norm(r_)
+    v = np.linalg.norm(v_)
+    # main term
+    f_ = -mu_s*r_/r**3
+    # perturbations
+    p_ = 0
+    # planets
+    for i in range(len(mu_p)):
+        s_, _ = spice.spkpos(tgP[i], t*days, 'J2000', 'NONE', '10')
+        s_ = s_/AU
+        p_ = p_ - mu_p[i]*( (r_-s_)/np.linalg.norm(r_-s_)**3 + s_/np.linalg.norm(s_)**3 )
+    # asteroids
+    for i in range(len(mu_a)):
+        s_, _ = spice.spkpos(tgA[i], t*days, 'J2000', 'NONE', '10')
+        s_ = s_/AU
+        p_ = p_ - mu_a[i]*( (r_-s_)/np.linalg.norm(r_-s_)**3 + s_/np.linalg.norm(s_)**3 )
+    # GR correction
+    p_ = p_ + (mu_s/cc**2/r**3)*( (4*mu_s/r - v**2)*r_ + 4*np.dot(r_,v_)*v_ )
+    # include Earth oblateness term
+    J2 = 1.08262539e-3
+    C = 1.5*J2*mu_p[2]*(6378.1366/AU)**2
+    s_, _ = spice.spkpos('399', t*days, 'J2000', 'NONE', '10')
+    U = spice.pxform('J2000', 'ITRF93', t*days)
+    r1_ = U @ (r_ - s_/AU) # geocentric radius vector, and convert to ECEF frame
+    r1 = np.linalg.norm(r1_)
+    x1, y1, z1 = r1_
+    a1_ = (C/r1**4) * np.array([ (5*(z1/r1)**2 - 1)*x1/r1,
+                                 (5*(z1/r1)**2 - 1)*y1/r1,
+                                 (5*(z1/r1)**2 - 3)*z1/r1 ])
+    aJ2_ = U.T @ a1_ # convert acceleration back to J2000 frame before adding it up
+    p_ = p_ + aJ2_
+    # non-gravitational term
+    if not aNG:
+       aNG_ = np.zeros(3)
+       dadp = np.array([])
+       n_p  = 0
+    else:
+       aNG_, dadp = aNG(r_,v_,parms_)
+       n_p = len(parms_)
+    p_ = p_ + aNG_
+    # total acceleration
+    a_ = f_ + p_
+    ### variational equations
+    PHI = np.reshape(y[6:42],(6,6))
+    # main term
+    F = -mu_s/r**3*( np.eye(3) - 3*np.outer(r_,r_)/r**2)
+    # point mass perturbers (planets only!)
+    P = np.zeros((3,3))
+    for i in range(len(mu_p)):
+        s_, _ = spice.spkpos(tgP[i], t*days, 'J2000', 'NONE', '10')
+        s_ = s_/AU
+        P = P - mu_p[i]/np.linalg.norm(r_-s_)**3 \
+          * ( np.eye(3) - 3*np.outer(r_-s_,r_-s_)/np.linalg.norm(r_-s_)**2 )
+    # asteroids, relativity, and radiation pressure are omitted in the variational eqns.
+    G = F + P
+    AP = np.block([[np.zeros((3,3)), np.eye(3)], [G, np.zeros((3,3))]]) @ PHI
+    # sensitivity matrix
+    if n_p > 0:
+        S = np.reshape(y[42:],(6,n_p))
+        AS = np.block([[np.zeros((3,3)), np.eye(3)], [G, np.zeros((3,3))]]) @ S \
+           + np.concatenate((np.zeros((3,n_p)),np.c_[dadp]))
+    else:
+        AS = np.array([])
+    ### full vector with derivatives 
+    dydt = np.concatenate([v_, a_, AP.flatten(), AS.flatten()])
+    return dydt
+
+
+# PLOTTING OUTPUT -------------------------------------------------------------
+def PlotResiduals(et,z,s_ra,s_de,RS,et0,propagator,prop_args,flag,x,title,fname):
+    res_ra = z[:len(et)]
+    res_de = z[len(et):]
     not_flag = np.logical_not(flag)
-    tlf = [datetime.fromisoformat(spice.et2utc(eti*days,'ISOC', 0)) \
-           for eti in et[not_flag]]
-    tlt = [datetime.fromisoformat(spice.et2utc(eti*days,'ISOC', 0)) \
-           for eti in et[flag]]
-    plt.ion()
-    plt.clf()
-    plt.subplot(311)
-    plt.title(obj_name)
-    # heliocentric distance
-    yt, _, _ = Propagate(x,et0,et[flag],np.zeros(len(et[flag])),['SUN', 'PLANETS', 'ASTEROIDS'])
-    yf, _, _ = Propagate(x,et0,et[not_flag],np.zeros(len(et[not_flag])),['SUN', 'PLANETS', 'ASTEROIDS'])
-    rht = np.linalg.norm(yt[:,:3],axis=1)
-    rhf = np.linalg.norm(yf[:,:3],axis=1)
-    plt.plot(tlf,rhf,'x',color='darkgray')
-    plt.plot(tlt,rht,'.',color='#00356B')
-    plt.gca().xaxis.set_ticklabels([])
-    plt.ylabel('Helioc. Dist. (AU)')
-    plt.grid()
-    plt.subplot(312)
+    tt = np.array([datetime.fromisoformat(spice.et2utc(eti*days,'ISOC', 0)) 
+                  for eti in et])
+    yy, _, _ = propagator(x,et0,et,RS,prop_args)
+    dd = np.linalg.norm(yy[:,:3],axis=1)
     tmin = datetime.fromisoformat(spice.et2utc(min(et)*days,'ISOC', 0))
     tmax = datetime.fromisoformat(spice.et2utc(max(et)*days,'ISOC', 0))
-    if scaled:
-        plt.plot(tlf,res_ra[not_flag]/s_ra[not_flag],'x',color='darkgray')
-        plt.plot(tlt,res_ra[flag]/s_ra[flag],'.',color='#00356B',label='R.A.')
-        plt.ylabel('R. A. Res. ($\sigma$)') 
-        #plt.ylim(min(res_ra[flag]/s_ra[flag]),max(res_ra[flag]/s_ra[flag]))
-        plt.ylim(-12,12)
-    else:
-        plt.plot(tlf,3600*np.rad2deg(res_ra[not_flag]),'x',color='darkgray')
-        plt.plot(tlt,3600*np.rad2deg(res_ra[flag]),'.',color='#00356B',label='R.A.')
-        plt.ylabel('R. A. Res. (arc sec)')
-        plt.ylim(min(3600*np.rad2deg(res_ra[flag])),max(3600*np.rad2deg(res_ra[flag])))
-    plt.plot([tmin,tmax],[0,0],'r')
+    # plot heliocentric distance
+    plt.subplot(311)
+    plt.title(title)
+    plt.plot(tt[flag],dd[flag],'.',color='#00356B')
+    plt.plot(tt[not_flag],dd[not_flag],'x',ms=4,color='darkgray')
+    plt.gca().xaxis.set_ticklabels([])
+    plt.gca().set_xbound(tmin, tmax)
+    plt.ylabel('Helioc. Dist. (AU)')
+    plt.grid()
+    # plot residuals in RA 
+    plt.subplot(312)
+    plt.plot(tt[flag],3600*np.rad2deg(res_ra[flag]),'.',color='#00356B',label='R.A.')
+    plt.plot(tt[not_flag],3600*np.rad2deg(res_ra[not_flag]),'x',ms=4,color='darkgray')
+    plt.ylabel('R. A. Res. (\")')
+    plt.ylim(min(3600*np.rad2deg(res_ra[flag])),max(3600*np.rad2deg(res_ra[flag])))
+    plt.plot([tmin,tmax],[0,0],'r-',lw=0.7)
     plt.grid()
     plt.gca().xaxis.set_ticklabels([])
+    plt.gca().set_xbound(tmin, tmax)
+    # plot residuals in DE
     plt.subplot(313)
-    if scaled:
-        plt.plot(tlf,res_de[not_flag]/s_de[not_flag],'x',color='darkgray')
-        plt.plot(tlt,res_de[flag]/s_de[flag],'.',color='#00356B',label='Decl.')
-        plt.ylabel('Decl. Res. ($\sigma$)')
-        #plt.ylim(min(res_de[flag]/s_de[flag]),max(res_de[flag]/s_de[flag]))
-        plt.ylim(-12,12)
-    else:
-        plt.plot(tlf,3600*np.rad2deg(res_de[not_flag]),'x',color='darkgray')
-        plt.plot(tlt,3600*np.rad2deg(res_de[flag]),'.',color='#00356B',label='Decl.')
-        plt.ylabel('Decl. Res. (arc sec)')
-        plt.ylim(min(3600*np.rad2deg(res_de[flag])),max(3600*np.rad2deg(res_de[flag])))
-    #plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
-    #plt.xticks(rotation=15)
-    plt.plot([tmin,tmax],[0,0],'r')
+    plt.plot(tt[flag],3600*np.rad2deg(res_de[flag]),'.',color='#00356B',label='Decl.')
+    plt.plot(tt[not_flag],3600*np.rad2deg(res_de[not_flag]),'x',ms=4,color='darkgray')
+    plt.ylabel('Decl. Res. (\")')
+    plt.ylim(min(3600*np.rad2deg(res_de[flag])),max(3600*np.rad2deg(res_de[flag])))
+    plt.plot([tmin,tmax],[0,0],'r-',lw=0.7)
     plt.xlabel('Date (UTC)')
     locator = mdates.AutoDateLocator()
     formatter = mdates.ConciseDateFormatter(locator)
     plt.gca().xaxis.set_major_locator(locator)
     plt.gca().xaxis.set_major_formatter(formatter)
+    plt.gca().set_xbound(tmin, tmax)
     plt.grid()
     plt.tight_layout()
+    plt.savefig(fname)
 
-def ScreenOutput(et0,x,Cov):
-    names = ['x0 ','y0 ','z0 ','vx0','vy0','vz0','A1 ','A2 ','A3 ']
-    units = ['[AU]','[AU]','[AU]','[AU/day]','[AU/day]','[AU/day]',
-             '[1e-8 AU/day^2]','[1e-8 AU/day^2]','[1e-8 AU/day^2]']
-    s_x = np.sqrt(np.diagonal(Cov)) 
-    print(' Best-fitting parameters:')
-    for k in range(len(x)):
-        if k > 5:
-            xx, ss = x[k]*1e8, s_x[k]*1e8
-        else:
-            xx, ss = x[k], s_x[k]
-        print('    %s = %13.10f +/- %13.10f %s' % (names[k], xx, ss, units[k]))
-    U = spice.pxform( 'J2000', 'ECLIPJ2000', et0*days )
-    r_, v_ = U @ x[0:3], U @ x[3:6]
-    elts = spice.oscelt(np.r_[r_, v_], et0*days, mu_s)
-    rp, ecc, inc, lnode, argp, M0, _, _ = elts
-    print('Orbital elements at epoch ', spice.et2utc(et0*days, 'C', 2),':')
-    print('a = %16.8f AU' % (rp/(1-ecc)))
-    print('e = %16.8f   ' % ecc)
-    print('i = %16.8f   ' % np.rad2deg(inc))
-    print('Ω = %16.8f   ' % np.rad2deg(lnode))
-    print('ω = %16.8f   ' % np.rad2deg(argp)) 
-    print('M = %16.8f   ' % np.rad2deg(M0))
-
-
-
-### DRIVER FUNCTION -----------------------------------------------------------
-def RunFit(obj_name,i1,i2,i3,parms_,forces=all_forces,it_max=9):
-    ### provide all Kernels via meta-Kernel
-    spice.furnsh('spice.mkn')
-    ### load data
-    obsstat_file = 'mpc_obs.txt'
-    objdata_file = obj_name+'.txt'
-    et, ra, de, s_ra, s_de, RS, JD, OC = LoadDataMPC(obsstat_file,objdata_file)
-    print('Object: ', obj_name)
-    ### preliminary orbit determination  
-    r2_, v2_, _ = PreliminaryOrbitDetermination(et,ra,de,s_ra,s_de,RS,i1,i2,i3)
-    et0 = et[i2]
-    ### differential correction of the orbit
-    # initialize first guess
-    x0 = np.r_[r2_,v2_,parms_]
-    # run differential correction
-    x, Cov, z, chi2, B, flag, u, X2 = DifferentialCorrection(et,ra,de,s_ra,s_de,RS,\
-                                      et0,x0,forces,it_max)
-    # output results and check
-    epoch = float(spice.et2utc(et0*days,'J', 10)[3:])
-    q = Horizons(obj_name.split('_')[0], location='@sun', epochs=epoch)
-    vec = q.vectors(refplane='earth')
-    pos0_ = np.array([vec['x'][0], vec['y'][0], vec['z'][0]])
-    vel0_ = np.array([vec['vx'][0], vec['vy'][0], vec['vz'][0]])
-    print('Differences with JPL Horizons values:')
-    print( ('Delta r_0 = '+3*'%16.8e') % (pos0_[0]-x[0],pos0_[1]-x[1],pos0_[2]-x[2]) )
-    print( ('Delta v_0 = '+3*'%16.8e') % (vel0_[0]-x[3],vel0_[1]-x[4],vel0_[2]-x[5]) )
-    ### screen output
-    ScreenOutput(et0,x,Cov)
-    ### plot final residuals
-    res_ra, res_de = z[:len(et)], z[len(et):]
-    PlotResiduals(et,res_ra,s_ra,res_de,s_de,et0,x,flag,obj_name,scaled=False)
-    ### release the spice Kernels 
-    spice.kclear()
-
-
-### MAIN ----------------------------------------------------------------------
-if __name__ == "__main__":
-
-    # 'Oumuamua
-    #RunFit('1I',5,15,30,np.array([]))
-    #RunFit('1I',5,15,30,np.array([1e-12]))
-    #RunFit('1I',5,15,30,np.array([1e-12,1e-12,1e-12]))
-
-    # RM 2003
-    #RunFit('523599',10,30,70,np.array([]))
-    #RunFit('523599',10,30,70,np.array([1e-12,1e-12,1e-12]))
-
-    # Golevka
-    RunFit('6489',858,866,873,np.array([]),it_max=25)
-
-    # Kamo'oaleva
-    #RunFit('469219',120,190,250,np.array([]))
-
+def PlotHistRes(z,s_ra,s_de,flag,title,fname):     
+    res_ra = z[:len(flag)]
+    res_de = z[len(flag):]
+    plt.subplot(121)
+    plt.title(title)
+    sns.histplot(res_ra[flag]/s_ra[flag],kde=True,bins=20)
+    plt.xlabel('R. A. Res. (\")')
+    plt.ylabel('Count')
+    plt.subplot(122)
+    plt.title(title)
+    sns.histplot(res_de[flag]/s_de[flag],kde=True,bins=20,color='C1')
+    plt.xlabel('Decl. Res. (\")')
+    plt.ylabel('Count')
+    plt.tight_layout()
+    plt.savefig(fname)
 
