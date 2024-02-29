@@ -1,7 +1,5 @@
-===================================================================
---- THIS BRANCH IS OBSOLETE AND WILL NOT BE UPDATED ANY FURTHER ---
+### THIS BRANCH IS OBSOLETE AND WILL NOT BE UPDATED ANY FURTHER
 FS - 2024-02-29
-===================================================================
 
 
 # orbit_finder
