@@ -524,19 +524,19 @@ def derivs(t,y,parms_,aNG):
         p_ = p_ - mu_a[i]*( (r_-s_)/np.linalg.norm(r_-s_)**3 + s_/np.linalg.norm(s_)**3 )
     # GR correction
     p_ = p_ + (mu_s/cc**2/r**3)*( (4*mu_s/r - v**2)*r_ + 4*np.dot(r_,v_)*v_ )
-    # include Earth oblateness term
-    J2 = 1.08262539e-3
-    C = 1.5*J2*mu_p[2]*(6378.1366/AU)**2
-    s_, _ = spice.spkpos('399', t*days, 'J2000', 'NONE', '10')
-    U = spice.pxform('J2000', 'ITRF93', t*days)
-    r1_ = U @ (r_ - s_/AU) # geocentric radius vector, and convert to ECEF frame
-    r1 = np.linalg.norm(r1_)
-    x1, y1, z1 = r1_
-    a1_ = (C/r1**4) * np.array([ (5*(z1/r1)**2 - 1)*x1/r1,
-                                 (5*(z1/r1)**2 - 1)*y1/r1,
-                                 (5*(z1/r1)**2 - 3)*z1/r1 ])
-    aJ2_ = U.T @ a1_ # convert acceleration back to J2000 frame before adding it up
-    p_ = p_ + aJ2_
+    # include Earth oblateness term - experimental, use with caution
+    #J2 = 1.08262539e-3
+    #C = 1.5*J2*mu_p[2]*(6378.1366/AU)**2
+    #s_, _ = spice.spkpos('399', t*days, 'J2000', 'NONE', '10')
+    #U = spice.pxform('J2000', 'ITRF93', t*days)
+    #r1_ = U @ (r_ - s_/AU) # geocentric radius vector, and convert to ECEF frame
+    #r1 = np.linalg.norm(r1_)
+    #x1, y1, z1 = r1_
+    #a1_ = (C/r1**4) * np.array([ (5*(z1/r1)**2 - 1)*x1/r1,
+    #                             (5*(z1/r1)**2 - 1)*y1/r1,
+    #                             (5*(z1/r1)**2 - 3)*z1/r1 ])
+    #aJ2_ = U.T @ a1_ # convert acceleration back to J2000 frame before adding it up
+    #p_ = p_ + aJ2_
     # non-gravitational term
     if not aNG:
        aNG_ = np.zeros(3)
