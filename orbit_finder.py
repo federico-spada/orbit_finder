@@ -11,6 +11,7 @@ import seaborn as sns
 
 # constants 
 Re = 6378.1366 # km
+fe = 1./298.257223563 ### Earth oblateness, WGS84 value 
 AU   = 1.495978707e8 # km
 cc = 299792.458 # km/s  
 days = 86400 # s 
@@ -112,13 +113,22 @@ def LoadDataMPC(obsstat_file,objdata_file,start_date=None,end_date=None):
             # heliocentric position of Earth to observation point vector
             rE, _ = spice.spkpos('399', eti, 'J2000', 'NONE', '10')
             # geocentric position of observing station
-            if code == '250' or code=='C57':
+            if code == '250' or code == 'C57':
                 # for HST, data is in the file 
                 l1 = f.readline()
                 X = float(l1[34:42].replace(' ',''))
                 Y = float(l1[46:54].replace(' ',''))
                 Z = float(l1[58:66].replace(' ',''))
                 R_ = np.array([X,Y,Z])
+            elif code == '247' or code == '270':
+                # roving observer data:
+                l1 = f.readline()
+                lon = np.radians(float(l1[34:44]))
+                lat = np.radians(float(l1[45:55]))
+                alt = float(l1[56:61])/1e3 # m -> km
+                R0_ = spice.georec(lon, lat, alt, Re, fe)
+                U = spice.pxform( 'ITRF93', 'J2000', eti )
+                R_ = U @ R0_
             else:
                 # for other observatories, must be calculated from geodetic data
                 io = np.where(obss == code)[0]
@@ -129,8 +139,8 @@ def LoadDataMPC(obsstat_file,objdata_file,start_date=None,end_date=None):
             RS = np.vstack((RS, R_+rE))
             # uncertainties in RA, Decl: assume 2 arc sec
             factor = np.cos(np.deg2rad(deo))
-            s_ra = np.append( s_ra, np.deg2rad(2/3600)*factor ) # rad
-            s_de = np.append( s_de, np.deg2rad(2/3600) ) # rad
+            s_ra = np.append( s_ra, np.deg2rad(2./3600)*factor ) # rad
+            s_de = np.append( s_de, np.deg2rad(2./3600) ) # rad
     RS = np.delete(RS, 0, 0)
     # use information from dictionary of uncertainties:
     for key in uncertainty:
@@ -526,6 +536,7 @@ def derivs(t,y,parms_,aNG):
     p_ = p_ + (mu_s/cc**2/r**3)*( (4*mu_s/r - v**2)*r_ + 4*np.dot(r_,v_)*v_ )
     # include Earth oblateness term - experimental, use with caution
     #J2 = 1.08262539e-3
+    #J2 = 0.00108263
     #C = 1.5*J2*mu_p[2]*(6378.1366/AU)**2
     #s_, _ = spice.spkpos('399', t*days, 'J2000', 'NONE', '10')
     #U = spice.pxform('J2000', 'ITRF93', t*days)
