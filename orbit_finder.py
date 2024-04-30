@@ -475,7 +475,7 @@ def RunAssist(x,et0,et,tau,forces):
     return y, P, S
 
 # SECOND OPTION: integrate the equations of motion with the SciPy ode solver
-# "solve_ivp"; slower option, but fully customizable equations (see "derivs")
+# "solve_ivp"; slower option, but fully customizable equations (see "Derivs")
 def PropagateSciPy(x,et0,et,RS,aNG):
     rtol = 1e-11
     atol = 1e-13
@@ -487,11 +487,11 @@ def PropagateSciPy(x,et0,et,RS,aNG):
     y0 = np.concatenate([r0_, v0_, np.eye(6).flatten(), np.zeros((6,n_p)).flatten()])
     # forward integration from et0 to et[-1]
     tspan_f = [et0, et[-1]]
-    sol_f = solve_ivp(derivs,tspan_f,y0,method=SWAG,args=(parms_,aNG),
+    sol_f = solve_ivp(Derivs,tspan_f,y0,method=SWAG,args=(parms_,aNG),
             rtol=rtol,atol=atol,dense_output=True)
     # backward integration from et0 to et[0]
     tspan_b = [et0, et[0]]
-    sol_b = solve_ivp(derivs,tspan_b,y0,method=SWAG,args=(parms_,aNG),
+    sol_b = solve_ivp(Derivs,tspan_b,y0,method=SWAG,args=(parms_,aNG),
             rtol=rtol,atol=atol,dense_output=True)
     ii_f = np.where(et >  et0)[0]
     ii_b = np.where(et <= et0)[0]
@@ -513,7 +513,7 @@ def PropagateSciPy(x,et0,et,RS,aNG):
     return yy, PP, SS
 
 # force model and linearization: see Montenbruck & Gill 2005, Chapters 3 and 7, resp.
-def derivs(t,y,parms_,aNG):
+def Derivs(t,y,parms_,aNG):
     r_ = y[0:3]
     v_ = y[3:6]
     r = np.linalg.norm(r_)
