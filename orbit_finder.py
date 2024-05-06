@@ -294,7 +294,7 @@ def DiffCorr(et,ra,de,s_ra,s_de,RS,et0,x0,propagator,prop_args,max_iter):
             # chi-square at epoch i
             X2[i] = ui @ np.linalg.inv(Gui) @ ui.T
         # rejection threshold is adjusted to not discard too many points
-        X2_rej = max( X2_rjb + 400./(1.2)**m_use, alpha*np.max(X2[flag]) )
+        X2_rej = max( X2_rjb + 400.*(1.2)**(-m_use), alpha*np.max(X2[flag]) )
         # recover epochs 
         i_rec = np.where((flag == False) & (X2 < X2_rec))[0]
         flag[i_rec] = True
@@ -593,17 +593,22 @@ def PlotResiduals(et,z,s_ra,s_de,RS,et0,propagator,prop_args,flag,x,title):
     tt = np.array([datetime.fromisoformat(spice.et2utc(eti*days,'ISOC', 0)) 
                   for eti in et])
     yy, _, _ = propagator(x,et0,et,RS,prop_args)
-    dd = np.linalg.norm(yy[:,:3],axis=1)
+    dh = np.linalg.norm(yy[:,:3],axis=1)
+    rE, _ = spice.spkpos('399', et*days, 'J2000', 'NONE', '10')
+    dg = np.linalg.norm(yy[:,:3]-rE/AU,axis=1)
     tmin = datetime.fromisoformat(spice.et2utc(min(et)*days,'ISOC', 0))
     tmax = datetime.fromisoformat(spice.et2utc(max(et)*days,'ISOC', 0))
     # plot heliocentric distance
     plt.subplot(311)
     plt.title(title)
-    plt.plot(tt[flag],dd[flag],'.',color='#00356B')
-    plt.plot(tt[not_flag],dd[not_flag],'x',ms=4,color='darkgray')
+    plt.plot(tt[flag],dh[flag],'.',color='#00356B',label='heliocentric')
+    plt.plot(tt[not_flag],dh[not_flag],'x',ms=3,color='darkgray')
+    plt.plot(tt[flag],dg[flag],'s',ms=3,color='firebrick',label='geocentric')
+    plt.plot(tt[not_flag],dg[not_flag],'kx',ms=3)
     plt.gca().xaxis.set_ticklabels([])
     plt.gca().set_xbound(tmin, tmax)
-    plt.ylabel('Helioc. Dist. (AU)')
+    plt.ylabel('Distance (AU)')
+    plt.legend()
     plt.grid()
     # plot residuals in RA 
     plt.subplot(312)
