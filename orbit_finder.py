@@ -64,6 +64,7 @@ def LoadDataMPC(obsstat_file,objdata_file,start_date=None,end_date=None):
     rcos = np.array([])
     rsin = np.array([])
     with open(obsstat_file) as f:
+        f.readline() # skip header
         for l in f:
             if l[3:12] != '         ':
                obss = np.append(obss, l[0:3])
@@ -82,6 +83,7 @@ def LoadDataMPC(obsstat_file,objdata_file,start_date=None,end_date=None):
     count = 0
     with open(objdata_file) as f:
         for l in f:
+            #print(count, l)
             count += 1
             # obs. station code 
             code = l[77:80]
@@ -319,6 +321,7 @@ def DiffCorr(et,ra,de,s_ra,s_de,RS,et0,x0,propagator,prop_args,max_iter):
         ### stopping condition
         if metric < 0.5 or chi2v < 0.5 or np.linalg.norm(dx/x) < 5e-8:
             break
+    print('End of differential correction.')
     return x, Cov, z, chi2, B, flag, u, X2
 
 def ResidualsAndPartials(et,ra,de,RS,et0,x,propagator,prop_args):
