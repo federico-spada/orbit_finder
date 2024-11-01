@@ -6,43 +6,62 @@ from astroquery.jplhorizons import Horizons
 
 spice.furnsh('spice.mkn')
 
+# A few use-cases
 
-### initializations
-object_name = '523599'
-fit_epoch = '2018-09-13.0'
-parms0_ = np.array([1e-12, 1e-12, 1e-12])
+# (6489) Golevka 
+#object_name = '6489'
+#fit_epoch = '2022-01-21.0'
 #parms0_ = []
+#propagator = PropagateAssist
+#prop_args  = cf.all_forces 
+
+# (523599) 2003 RM 
+#object_name = '523599'
+#fit_epoch = '2023-09-13.0'
+#parms0_ = np.array([1e-11, 1e-11, 1e-11])
+#propagator = PropagateAssist
+#prop_args  = cf.all_forces
+
+# 1I/'Oumuamua 
+object_name = '1I'
+fit_epoch = '2018-01-01.0'
+parms0_ = np.array([1e-10, 1e-10, 1e-10])
 propagator = PropagateAssist
 prop_args  = cf.all_forces 
+
+# C/1998 P1
+#object_name = 'C_1998_P1'
+#fit_epoch = '1998-05-31'
+#parms0_ = np.array([1e-10, 1e-10, 1e-10])
 #propagator = PropagateSciPy
 #prop_args = NonGravAccel
 
+
 ### Load data
-# file with observatory data
 fobss = 'mpc_obs.txt'
-# file with observations
 fdata = object_name+'.txt'
-et, ra, de, s_ra, s_de, RS, JD, OC = LoadDataMPC(fobss, fdata)
+Data = LoadDataMPC(fobss, fdata)
 et0 = spice.str2et(fit_epoch)/cf.days
-title = 'aaa'
 max_iter = 25
 
-# Orbit initialization
-# load JPL Horizons state vector as initial guess:
-target = object_name #obj_name.split('_')[-2] + ' ' + obj_name.split('_')[-1]
-epoch  = et0 + 2451545.0
+### Orbit fit initialization
+if '_' in object_name:
+    target = object_name.split('_')[-2] + ' ' + object_name.split('_')[-1]
+else:
+    target = object_name 
+epoch  = et0 + spice.j2000() # TDB, _not_ UTC!
 query = Horizons(target, location='@10', epochs=epoch)
 vec = query.vectors(refplane='earth')
-x0 = np.array([vec['x'][0] , vec['y'][0 ], vec['z'][0],
+xH = np.array([vec['x'][0] , vec['y'][0] , vec['z'][0],
                vec['vx'][0], vec['vy'][0], vec['vz'][0]])
-# initial guess for state vector
-x0 = np.r_[x0, parms0_]
+x0 = np.r_[xH, parms0_]
 
-###  differential correction
-x, Cov, RMS, res, flag = DiffCorr(et, ra, de, s_ra, s_de, RS, et0, x0, 
-                                  propagator, prop_args, max_iter)
+### Differential correction
+Fit = DiffCorr(Data, et0, x0, propagator, prop_args, max_iter)
 
-SummaryPlot(et, res, s_ra, s_de, RS, et0, propagator, prop_args, flag, x, scaled=True)
+### Output
+SummaryPlot(object_name, Data, Fit, scaled=True)
+SummaryText(object_name, Data, Fit)
 
 spice.kclear()
 

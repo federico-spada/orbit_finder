@@ -1,6 +1,13 @@
 import numpy as np
 from orbit_finder import *
 
+import config as cf
+
+# constants
+aa, r0, mm, nn, kk = 0.1113, 2.808, 2.15, 5.093, 4.6142
+#aa, r0, mm, nn, kk = 0.01003, 10., 2.0, 3.0, 2.6
+
+
 ### FUNCTION IMPLEMENTING THE NON-GRAVITATIONAL ACCELERATION MODEL ------------
 #   *** To be modified or rewritten by the user, as needed ***
 #   RTN decomposition, with option for ACN (comment/uncomment appropriate lines below).
@@ -9,7 +16,7 @@ from orbit_finder import *
 #     implemented, with radial dependence according to the Marsden+73 parametrization, 
 #     and the parameters A_i (up to i=3) are fitted in the orbit determination procedure. 
 #   - If parms_ is passed with 4 elements, an asymmetric radial dependence is used,
-#     and the perihelion offset tau (in days) is also fit.
+#     and the perihelion offset tau (in days) is also fitted.
 def NonGravAccel(r_,v_,parms_):
     ### NG acceleration vector decomposition
     r = np.linalg.norm(r_)
@@ -20,9 +27,9 @@ def NonGravAccel(r_,v_,parms_):
     #u1_ = v_/v
     u3_ = np.cross(r_,v_)/np.linalg.norm(np.cross(r_,v_))
     u2_ = np.cross(u3_,u1_)
-    ### g function     
+    ### g function and its derivative 
     # Marsden+73 parametrization     
-    aa, r0, mm, nn, kk = 0.1113, 2.808, 2.15, 5.093, 4.6142
+    #aa, r0, mm, nn, kk = 0.1113, 2.808, 2.15, 5.093, 4.6142
     if len(parms_) <= 3:
         # symmetric model - no perihelion offset: 
         A1, A2, A3 = np.pad(parms_, (0, 3-len(parms_)))
@@ -37,11 +44,11 @@ def NonGravAccel(r_,v_,parms_):
         A1, A2, A3, tau = parms_
         A_ = A1 * u1_ + A2 * u2_ + A3 * u3_
         # get r', dr'/dtau
-        r1, dr1dtau = KeplerUniv(r_,v_,-tau,mu_s)
+        r1, drdt1 = KeplerUniv(r_, v_, -tau, cf.mu_s)
         # this is g(r') = g[r(t-tau)]  
         g = aa/(r1/r0)**mm/(1. + (r1/r0)**nn)**kk
         dgdr1 = -(g/r1)*( mm*(1+(r1/r0)**nn) + kk*nn*(r1/r0)**nn )/(1 + (r1/r0)**nn)
-        dgdtau = dgdr1 * dr1dtau * days # note: "days" factor for consistency of scaling!
+        dgdtau = dgdr1 * drdt1 * cf.days
         # NG acceleration
         aNG_ = g * A_
         # matrix with partials
