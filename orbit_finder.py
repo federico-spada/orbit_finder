@@ -473,8 +473,8 @@ def SummaryPlot(object_name, Data, Fit, scaled=True):
     axes['Z'].set_xlabel('Count')
     axes['Z'].set_ylim(ylim)
     axes['Z'].grid()
-    plt.show()
     plt.savefig('summary_plot.pdf')
+    plt.show()
     plt.close()
 
 def SummaryText(object_name, Data, Fit):
