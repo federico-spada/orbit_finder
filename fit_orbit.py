@@ -52,8 +52,7 @@ else:
 epoch  = et0 + spice.j2000() # TDB, _not_ UTC!
 query = Horizons(target, location='@10', epochs=epoch)
 vec = query.vectors(refplane='earth')
-xH = np.array([vec['x'][0] , vec['y'][0] , vec['z'][0],
-               vec['vx'][0], vec['vy'][0], vec['vz'][0]])
+xH = np.array([vec[key][0] for key in ['x', 'y', 'z', 'vx', 'vy', 'vz']])
 x0 = np.r_[xH, parms0_]
 
 ### Differential correction
