@@ -14,82 +14,67 @@ import config as cf
 ### LOAD DATA -----------------------------------------------------------------
 def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
     # load geodata of observing stations
-    obss = np.array([])
-    lons = np.array([])
-    rcos = np.array([])
-    rsin = np.array([])
-    with open(obsstat_file) as f:
-        f.readline() # skip header
-        for l in f:
-            if l[3:12] != '         ':
-               obss = np.append(obss, l[0:3])
-               lons = np.append(lons, float(l[3:13]))
-               rcos = np.append(rcos, float(l[13:21])*cf.Re)
-               rsin = np.append(rsin, float(l[21:30])*cf.Re)
+    with open(obsstat_file, 'r') as file:
+        file.readline() # skip header
+        lines = [line.strip() for line in file.readlines() \
+                 if (line.strip()[3:12] != '         ')]
+    obss = np.array([line[0:3] for line in lines])
+    lons = np.array([float(line[3:13]) for line in lines])
+    rcos = np.array([float(line[13:21])*cf.Re for line in lines])
+    rsin = np.array([float(line[21:30])*cf.Re for line in lines])
     # load observational data, parsing an input file in MPC format
-    OC = np.array([])
-    ra = np.array([])
-    de = np.array([])
-    RS = np.zeros(3)
-    et = np.array([])
-    s_ra = np.array([])
-    s_de = np.array([])
-    count = 0
-    with open(objdata_file) as f:
-        for l in f:
-            count += 1
-            # obs. station code 
-            code = l[77:80]
-            OC = np.append(OC, code)
-            # time of observation: convert to SPICE Ephemerides Time (~TDB)
-            eti = spice.str2et(l[15:25]) + float(l[25:32])*cf.days
-            et = np.append(et, eti)
-            # observed RA
-            hours, minutes, seconds = float(l[32:34]), float(l[35:37]), float(l[38:44])
-            rao = hours + minutes/60 + seconds/3600
-            ra = np.append(ra, np.deg2rad(15*rao)) # rad
-            # observed Decl
-            degrees, minutes, seconds = float(l[44:47]), float(l[48:50]), float(l[51:56])
-            deo = np.sign(degrees)*(abs(degrees) + minutes/60 + seconds/3600)
-            de = np.append(de, np.deg2rad(deo)) # rad
-            # heliocentric position of Earth to observation point vector
-            rE = spice.spkpos('399', eti, 'J2000', 'NONE', '10')[0]
-            # geocentric position of observing station
-            if code == '250' or code == 'C57':
-                # for HST, data is in the file 
-                l1 = f.readline()
-                X = float(l1[34:42].replace(' ',''))
-                Y = float(l1[46:54].replace(' ',''))
-                Z = float(l1[58:66].replace(' ',''))
-                R_ = np.array([X,Y,Z])
-            elif code == '247' or code == '270':
-                # "roving observer" data:
-                l1 = f.readline()
-                lon = np.radians(float(l1[34:44]))
-                lat = np.radians(float(l1[45:55]))
-                alt = float(l1[56:61])/1e3 # m -> km
-                R0_ = spice.georec(lon, lat, alt, cf.Re, cf.fe)
-                U = spice.pxform( 'ITRF93', 'J2000', eti )
-                R_ = U @ R0_
-            else:
-                # for other observatories, must be calculated from geodetic data
-                io = np.where(obss == code)[0]
-                R0_ = spice.cylrec(rcos[io], np.deg2rad(lons[io]), rsin[io])
-                # transform from e.f. to s.f. coordinates
-                U = spice.pxform( 'ITRF93', 'J2000', eti )
-                R_ = U @ R0_
-            RS = np.vstack((RS, R_+rE))
-            # uncertainties in RA, Decl: assume 2 arc sec
-            factor = np.cos(np.deg2rad(deo))
-            s_ra = np.append(s_ra, np.deg2rad(2./3600)*factor) # rad
-            s_de = np.append(s_de, np.deg2rad(2./3600) ) # rad
-    RS = np.delete(RS, 0, 0)
-    # use uncertainties from Veres et al. 2017 when available:
+    with open(objdata_file, 'r') as file:
+        lines = file.readlines()
+    # standard observing stations lines
+    obs_lines = [line for line in lines if line[34] == ' ']
+    # space telescopes lines
+    space_tel_codes = ['250', 'C57']
+    spt_raw = [line for line in lines if line[77:80] in space_tel_codes]
+    spt_lines = [spt_raw[i]+spt_raw[i+1] for i in range(0, len(spt_raw)-1, 2)]
+    # roving observer lines
+    rovng_obs_codes = ['247', '270', 'War']
+    rvg_raw = [line for line in lines if line[77:80] in rovng_obs_codes]
+    rvg_lines = [rvg_raw[i]+rvg_raw[i+1] for i in range(0, len(rvg_raw)-1, 2)]
+    # observing station code
+    OC = np.array([line[77:80] for line in obs_lines])
+    # observing epoch parsed into SPICE's Ephemeris Time (~TDB)
+    et = np.array([spice.str2et(line[15:25])+float(line[25:32])*cf.days for line in obs_lines])
+    # observed right ascension
+    ra = np.array([np.deg2rad(15.*float(line[32:34])+float(line[35:37])/4.
+                   +float(line[38:44])/240.) for line in obs_lines])
+    # observed declination
+    de = np.array([np.deg2rad( np.sign(float(line[44:47]))*(abs(float(line[44:47]))
+                  +float(line[48:50])/60.+float(line[51:56])/3600.) ) for line in obs_lines])
+    # uncertainties, including cos(delta) factor for RA
+    s_ra = np.deg2rad(2./3600)*np.cos(de)
+    s_de = np.repeat(np.deg2rad(2./3600), len(de))
+    # observer location, in heliocentric J2000 frame
+    RS = np.zeros((len(OC), 3))
+    for k, code in enumerate(OC):
+        if code in space_tel_codes:
+            # space telescopes entries
+            line1 = [line for line in spt_lines if (line[15:32] == obs_lines[k][15:32])][0]
+            RS[k,:] = [float(x.replace(' ','')) for x in line1[114:].split('    ')[:3]]
+        elif code in rovng_obs_codes:
+            # roving observers entries
+            line1 = [line for line in rvg_lines if (line[15:32] == obs_lines[k][15:32])][0]
+            lon, lat, alt = [float(x) for x in line1[114:].split()[:3]]
+            R0 = spice.georec(np.radians(lon), np.radians(lat), alt/1e3, cf.Re, cf.fe)
+            U = spice.pxform( 'ITRF93', 'J2000', et[k] )
+            RS[k,:] = U @ R0
+        else:
+            # standard entries
+            io = np.where(obss == code)[0]
+            R0 = spice.cylrec(rcos[io], np.deg2rad(lons[io]), rsin[io])
+            U = spice.pxform( 'ITRF93', 'J2000', et[k] )
+            RS[k,:] = U @ R0
+    # convert to heliocentric 
+    RS = RS + spice.spkpos('399', et, 'J2000', 'NONE', '10')[0]
+    # replace default uncertainties with those from Veres et al. 2017, if available
     for key in cf.uncertainty:
         ii = np.where(OC == key)[0]
-        factor = np.cos(de[ii])
-        s_ra[ii] = np.deg2rad(cf.uncertainty[key]/3600)*factor # arc sec to rad 
-        s_de[ii] = np.deg2rad(cf.uncertainty[key]/3600) # arc sec to rad 
+        s_ra[ii] = np.deg2rad(cf.uncertainty[key]/3600)*np.cos(de[ii])
+        s_de[ii] = np.deg2rad(cf.uncertainty[key]/3600)
     # >>> (optional) restrict epochs to the range between start_date and end_date
     if not start_date:
         start_date = spice.et2utc(et[0],'ISOC',0)
@@ -99,22 +84,22 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
         i_start = np.where(et >= et_start)[0][0]
     if not end_date:
         end_date = spice.et2utc(et[-1],'ISOC',0)
-        i_end = len(et)        
+        i_end = len(et)
     else:
         et_end = spice.str2et(end_date)
         i_end = np.where(et <= et_end)[0][-1]
-    print('Using data between', start_date, ' and', end_date, 
-          '; range:', i_start, '-' ,i_end)     
+    print('Using data between', start_date, ' and', end_date,
+          '; range:', i_start, '-' ,i_end)
     # all epochs outside this range will be dropped:
-    msk = range(i_start,i_end)
+    msk = range(i_start, i_end)
     # <<<
     # change units to AU, days 
     RS = RS / cf.AU
     et = et / cf.days
     ### return output as dictionary
     Data = {'ET':et[msk], 'OC':OC[msk], 'RS':RS[msk],
-            'RA':ra[msk], 'De':de[msk], 'sigma_RA':s_ra[msk], 'sigma_De':s_de[msk]} 
-    return Data 
+            'RA':ra[msk], 'De':de[msk], 'sigma_RA':s_ra[msk], 'sigma_De':s_de[msk]}
+    return Data    
 
 
 
@@ -203,16 +188,16 @@ def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter):
 def ResidualsAndPartials(Data, et0, x, propagator, prop_args):
     n, m = len(x), len(Data['ET'])
     # call propagator function (its name is passed as input: "propagator"); returns
-    # state vector yy, state transition matrix PP, sensitivity matrix SS at all epochs
+    # state vector y, state transition matrix PP, sensitivity matrix SS at all epochs
     # Note: propagator also takes care of light travel time iteration
-    yy, PP, SS = propagator(x, et0, Data['ET'], Data['RS'], prop_args)
+    y, P, S = propagator(x, et0, Data['ET'], Data['RS'], prop_args)
     # initialize residuals and their partials matrix for current x
     B = np.zeros((m, 2, n))
     z = np.zeros((m, 2))
     # fill in B and z (Escobal 1976 formulae)
     for i in range(m):
         R_ = Data['RS'][i,:]
-        r_, P, S = yy[i,:3], PP[i,:,:], SS[i,:,:]
+        r_, Pi, Si = y[i,:3], P[i,:,:], S[i,:,:]
         rho_ = r_ - R_
         rho = np.linalg.norm(rho_)
         cos_ra, sin_ra = np.cos(Data['RA'][i]), np.sin(Data['RA'][i])
@@ -221,12 +206,12 @@ def ResidualsAndPartials(Data, et0, x, propagator, prop_args):
         D_ = np.array([-sin_de*cos_ra, -sin_de*sin_ra, cos_de ])
         L_ = np.array([ cos_de*cos_ra,  cos_de*sin_ra, sin_de ])
         dL_ = (L_ - rho_/rho)
-        # fill partials matrix
-        B[i,:,:] = np.c_[ np.r_[ A_, np.zeros(3) ]/rho @ np.block([P, S]),
-                          np.r_[ D_, np.zeros(3) ]/rho @ np.block([P, S]) ].T
-        # fill residual vector
-        z[i,:] = np.dot(dL_, A_), np.dot(dL_, D_) 
-    return z, B, yy
+        # vector of residuals z
+        z[i,:] = np.dot(dL_, A_), np.dot(dL_, D_)
+        # design matrix ∂z/∂x
+        B[i,:,:] = np.c_[ np.r_[ A_, np.zeros(3) ]/rho @ np.block([Pi, Si]),
+                          np.r_[ D_, np.zeros(3) ]/rho @ np.block([Pi, Si]) ].T
+    return z, B, y
 
 
 
@@ -238,13 +223,9 @@ def PropagateAssist(x, et0, et, RS, forces):
     m = len(et)
     tau = np.zeros(m)
     for j in range(2):
-        yy, PP, SS = RunAssist(x, et0, et, tau, forces)
-        for i in range(m):
-            r_ = yy[i,:3]
-            R_ = RS[i,:]
-            # note speed of light in vacuum, cc, is in AU/days 
-            tau[i] = np.linalg.norm(r_-R_)/cf.cc
-    return yy, PP, SS
+        y, P, S = RunAssist(x, et0, et, tau, forces)
+        tau = np.array([np.linalg.norm(y[i,:3]-RS[i,:])/cf.cc for i in range(m)])
+    return y, P, S
         
 def RunAssist(x, et0, et, tau, forces):
     t0 = et0
@@ -270,10 +251,7 @@ def RunAssist(x, et0, et, tau, forces):
     for k in range(nparms):
         params_ngforce[k] = p_[k]
     extras.particle_params = params_ngforce
-    # >>> list with forces to be included
     extras.forces = forces
-    #print(extras.forces) # check what is included
-    # <<<
     # prepare for integration 
     m = len(t)
     y = np.zeros((m,6))
@@ -316,10 +294,6 @@ def RunAssist(x, et0, et, tau, forces):
     sim.add(part0)
     sim.t = t0
     extras = assist.Extras(sim, ephem)
-    # turn off non-gravitational forces to use variational particles
-    #forces = extras.forces
-    #forces.remove("NON_GRAVITATIONAL")
-    #extras.forces = forces
     # add variational particles to calculate state transition matrix
     vp_x0 = sim.add_variation(testparticle=0,order=1)
     vp_x0.particles[0].x = 1
@@ -375,23 +349,13 @@ def PropagateSciPy(x, et0, et, RS, aNG):
     for j in range(2):
         teval_b = et[ii_b]-tau[ii_b]
         teval_f = et[ii_f]-tau[ii_f]
-        #sol = np.r_[sol_b.sol(teval_b).T, sol_f.sol(teval_f).T]
-        sol = np.zeros((m, len(y0)))
-        for l, tb in enumerate(teval_b):
-            sol[l,:] = sol_b.sol(tb).T
-        for l, tf in enumerate(teval_f):
-            sol[l,:] = sol_f.sol(tf).T        
-
-        for i in range(m):
-            r_ = sol[i,:3]
-            R_ = RS[i,:]
-            # note speed of light in vacuum, cc, is in AU/days 
-            tau[i] = np.linalg.norm(r_-R_)/cf.cc
+        sol = np.array([sol_b.sol(tb).T for tb in teval_b] + [sol_f.sol(tf).T for tf in teval_f]) 
+        tau = np.array([np.linalg.norm(sol[i,:3]-RS[i,:])/cf.cc for i in range(m)])
     # prepare output
-    yy = np.reshape(sol[:,  :6], (m, 6))
-    PP = np.reshape(sol[:,6:42], (m, 6, 6))
-    SS = np.reshape(sol[:,42: ], (m, 6, n_p))
-    return yy, PP, SS
+    y = np.reshape(sol[:,  :6], (m, 6))
+    P = np.reshape(sol[:,6:42], (m, 6, 6))
+    S = np.reshape(sol[:,42: ], (m, 6, n_p))
+    return y, P, S
 
 # force model and linearization: see Montenbruck & Gill 2005, Chapters 3 and 7, resp.
 def Derivs(t, y, parms_,aNG):
@@ -479,18 +443,20 @@ def SummaryPlot(object_name, Data, Fit, scaled=True):
     axes['A'].set_ybound(lower=0.)
     axes['A'].legend()  
     # plot residuals in RA 
+    axes['B'].axhspan(-1, 1, color='palegreen', alpha=0.5)
     axes['B'].plot(tt[flag], res_ra[flag], '.', color='#00356B', label='included')
     axes['B'].plot(tt[not_flag], res_ra[not_flag], 'x', ms=4, color='darkgray', label='excluded')
-    axes['B'].axhline(color='k', lw=0.7)
+    axes['B'].axhline(color='orangered', lw=0.7)
     axes['B'].xaxis.set_ticklabels([])
     axes['B'].set_ylabel('R. A. Res. '+unit)
     axes['B'].set_ylim(ylim)
     axes['B'].legend()
     axes['B'].grid()
     # plot residuals in DE
+    axes['C'].axhspan(-1, 1, color='palegreen', alpha=0.5)
     axes['C'].plot(tt[flag], res_de[flag], '.', color='#00356B', label='Decl.')
     axes['C'].plot(tt[not_flag], res_de[not_flag], 'x', ms=4, color='darkgray')
-    axes['C'].axhline(color='k', lw=0.7)
+    axes['C'].axhline(color='orangered', lw=0.7)
     axes['C'].set_ylabel('Decl. Res. '+unit)
     axes['C'].set_xlabel('Date (UTC)')
     axes['C'].xaxis.set_major_locator(locator)
@@ -498,16 +464,16 @@ def SummaryPlot(object_name, Data, Fit, scaled=True):
     axes['C'].set_ylim(ylim)
     axes['C'].grid()
     # add histograms
-    #axes['X'].set_axis_off()
     axes['Y'].hist(res_ra[flag], bins=20, orientation='horizontal', color='#00356B')
-    axes['Y'].axhline(color='k', lw=0.7)
+    axes['Y'].axhline(color='orangered', lw=0.7)
     axes['Y'].set_ylim(ylim)
     axes['Y'].grid()
     axes['Z'].hist(res_de[flag], bins=20, orientation='horizontal', color='#00356B')
-    axes['Z'].axhline(color='k', lw=0.7)
+    axes['Z'].axhline(color='orangered', lw=0.7)
     axes['Z'].set_xlabel('Count')
     axes['Z'].set_ylim(ylim)
     axes['Z'].grid()
+    plt.show()
     plt.savefig('summary_plot.pdf')
     plt.close()
 
@@ -570,7 +536,6 @@ def JacobianTBP(r_, v_, mu):
     b_ = np.cross(h_/h, n_)
     w = np.arctan2( np.dot(e_, b_), np.dot(e_, n_) )
     # for the I, W, w partials:
-    #P_, Q_, W_ = spice.rotate(w, 3) @ spice.rotate(I, 1) @ spice.rotate(W, 3)
     W_ = h_/h
     P_ = e_/e
     Q_ = np.cross(W_, P_)
@@ -637,7 +602,7 @@ def InitOrbDet(et, ra, de, s_ra, s_de, RS, i1, i2, i3):
 
 # Reference: Bate, Mueller, White (1971), Section 5.8, page 271
 def AnglesOnlyIOD(taui, Ri_, Li_, mu_s, r2i, kmax, tol):
-    tau1, tau3, tau = taui
+    tau1, tau3, _ = taui
     R1_, R2_, R3_ = Ri_
     L1_, L2_, L3_ = Li_
     r2 = r2i
@@ -653,8 +618,8 @@ def AnglesOnlyIOD(taui, Ri_, Li_, mu_s, r2i, kmax, tol):
         r20 = r2
         A = np.array([ np.concatenate([f1*np.cross(I_,L1_), g1*np.cross(I_,L1_)]),
                        np.concatenate([f1*np.cross(J_,L1_), g1*np.cross(J_,L1_)]),
-                       np.concatenate([   np.cross(I_,L2_), np.array([0,0,0])  ]),
-                       np.concatenate([   np.cross(J_,L2_), np.array([0,0,0])  ]),
+                       np.concatenate([   np.cross(I_,L2_), np.zeros(3)        ]),
+                       np.concatenate([   np.cross(J_,L2_), np.zeros(3)        ]),
                        np.concatenate([f3*np.cross(I_,L3_), g3*np.cross(I_,L3_)]),
                        np.concatenate([f3*np.cross(J_,L3_), g3*np.cross(J_,L3_)]) ])
         b = np.array([ np.cross(L1_,R1_)[0], np.cross(L1_,R1_)[1],
