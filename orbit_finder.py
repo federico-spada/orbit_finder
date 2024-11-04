@@ -7,6 +7,8 @@ import rebound
 import assist
 from scipy.integrate import solve_ivp
 from extensisq import SWAG
+from astropy import units as u
+from astropy_healpix import HEALPix
 
 import config as cf
 
@@ -27,6 +29,8 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
         lines = file.readlines()
     # standard observing stations lines
     obs_lines = [line for line in lines if line[34] == ' ']
+    # store astrometric catalog code, for debiasing:
+    catc = np.array([line[71] for line in lines])
     # space telescopes lines
     space_tel_codes = ['250', 'C57']
     spt_raw = [line for line in lines if line[77:80] in space_tel_codes]
@@ -91,15 +95,36 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
     print('Using data between', start_date, ' and', end_date,
           '; range:', i_start, '-' ,i_end)
     # all epochs outside this range will be dropped:
-    msk = range(i_start, i_end)
+    mask = range(i_start, i_end)
     # <<<
     # change units to AU, days 
     RS = RS / cf.AU
     et = et / cf.days
     ### return output as dictionary
-    Data = {'ET':et[msk], 'OC':OC[msk], 'RS':RS[msk],
-            'RA':ra[msk], 'De':de[msk], 'sigma_RA':s_ra[msk], 'sigma_De':s_de[msk]}
+    Data = {'ET':et[mask], 'OC':OC[mask], 'RS':RS[mask], 'Cat':catc[mask],
+            'RA':ra[mask], 'De':de[mask], 'sigma_RA':s_ra[mask], 'sigma_De':s_de[mask]}
     return Data    
+
+# Debiasing: Eggl et al. (2020)
+def DebiasData(bias_file, Data):
+    with open(bias_file, 'r') as file:
+        lines = file.readlines()[:5]
+    nside = int(lines[1][9:11])
+    hp = HEALPix(nside=nside)
+    catalogs = lines[4][1:].strip().split()
+    bias = np.loadtxt(bias_file, skiprows=23)
+    cid = [catalogs.index(cc) if cc in catalogs else -1 for cc in Data['Cat']]
+    pid = [hp.lonlat_to_healpix(ra * u.rad, de * u.rad) for ra, de in zip( Data['RA'], Data['De'])]
+    dRA, dDE, pmRA, pmDE = np.array( [bias[pid[i], 4*cid[i]:4*cid[i]+4] if cid[i] != -1
+                                  else [0, 0, 0, 0] for i in range(len(Data['ET']))] ).T
+    count = sum([c >= 0 for c in cid])
+    print('Debiased astrometric data at %i epochs.' % count)
+    dt = Data['ET']/365.25
+    delta_ra = (dRA + dt * pmRA/1e3) / np.cos(Data['De'])
+    delta_de =  dDE + dt * pmDE/1e3
+    Data['RA'] = Data['RA'] - np.deg2rad(delta_ra/3600.)
+    Data['De'] = Data['De'] - np.deg2rad(delta_de/3600.)
+    return Data
 
 
 

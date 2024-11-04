@@ -9,11 +9,11 @@ spice.furnsh('spice.mkn')
 # A few use-cases
 
 # (6489) Golevka 
-object_name = '6489'
-fit_epoch = '2022-01-21.0'
-parms0_ = []
-propagator = PropagateAssist
-prop_args  = cf.all_forces 
+#object_name = '6489'
+#fit_epoch = '2022-01-21.0'
+#parms0_ = []
+#propagator = PropagateAssist
+#prop_args  = cf.all_forces 
 
 # (523599) 2003 RM 
 #object_name = '523599'
@@ -23,11 +23,11 @@ prop_args  = cf.all_forces
 #prop_args  = cf.all_forces
 
 # 1I/'Oumuamua 
-#object_name = '1I'
-#fit_epoch = '2018-01-01.0'
-#parms0_ = np.array([1e-10, 1e-10, 1e-10])
-#propagator = PropagateAssist
-#prop_args  = cf.all_forces 
+object_name = '1I'
+fit_epoch = '2018-01-01.0'
+parms0_ = np.array([1e-10]) # purely radial!
+propagator = PropagateAssist
+prop_args  = cf.all_forces 
 
 # C/1998 P1
 #object_name = 'C_1998_P1'
@@ -43,6 +43,9 @@ fdata = object_name+'.txt'
 Data = LoadDataMPC(fobss, fdata)
 et0 = spice.str2et(fit_epoch)/cf.days
 max_iter = 25
+
+fbias = 'bias.dat'
+Data = DebiasData(fbias, Data)
 
 ### Orbit fit initialization
 if '_' in object_name:
