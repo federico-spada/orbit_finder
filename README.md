@@ -15,7 +15,7 @@ Python orbit determination code. Works with astrometric data from the Minor Plan
 * For SpiceyPy: Meta-Kernel file "spice.mkn"
   (see https://spiceypy.readthedocs.io/en/stable/other_stuff.html#lesson-1-kernel-management-with-the-kernel-subsystem);
   Naif SPICE Kernels can be downloaded from: https://naif.jpl.nasa.gov/naif/data_generic.html
-* For ASSIST: ephemerides files, such as "linux_p1550p2650.440", "sb441-n16.bsp" 
+* For ASSIST: ephemerides files "linux_p1550p2650.440" or "linux_m13000p17000.441"; "sb441-n16.bsp" 
   (not part of this repository as they are relatively large in size; available from: https://assist.readthedocs.io/en/stable/installation/)
 * For bias correction of astrometric data: the required file "bias.dat" can be downloaded from:  https://ssd.jpl.nasa.gov/ftp/ssd/debias/debias_2018.tgz, (see also Eggl et al. 2020)
 * Input data: 
@@ -26,15 +26,14 @@ Python orbit determination code. Works with astrometric data from the Minor Plan
 The orbit determination procedure is described in detail in the arXiv preprint https://arxiv.org/abs/2304.06964, and references therein.
 The current Python implementations improves the accuracy and extends the functionality of a previous MATLAB version.
 
-The script contains functions for loading the data (assumed to be in MPC format), applying bias correction, performing preliminary orbit determination
-on a subset of three user-specified epochs, and refining the initial guess by differential correction. A convenience functionality to query the state vector
-at epoch from the JPL Horizons database is also included.
+The code in "orbit_finder.py" includes functions to load the data (assumed to be in the standard MPC 80-columns format), apply bias correction, perform 
+preliminary orbit determination on a subset of three user-specified epochs, and refining the initial guess by differential correction.
 
 ### Initial orbit determination
-At the moment, an implementation of a Gaussian-like initial orbit determination method is available, which can be used to provide an initial guess for the
-differential correction procedure. Alternatively, the state vector at a user-specified epoch obtained from a query to the JPL Horizons database can also be
-used for the same purpose. The latter option is recommended for its higher accuracy and flexibility (e.g., it permits the user to freely choose the epoch 
-at which the orbit will be determined).  
+At the moment, an implementation of a Gaussian-like initial orbit determination method based on three user-specified epochs is available, which can be used 
+to provide an initial guess for the differential correction procedure. Alternatively, the state vector at a user-specified epoch obtained from a query to 
+the JPL Horizons database can also be used for the same purpose. The latter option is recommended in general for its higher accuracy and flexibility (e.g., 
+it allows the user to freely choose the epoch at which the orbit will be determined).  
 
 ### Differential correction of the orbit
 The differential correction procedure implements automatic outlier rejection (based on Carpino et al. 2003, Icarus, 166, 248), and can include the 
@@ -50,7 +49,7 @@ The scipy-version allows full control on the implementation of the equations of 
 but this freedom comes with a performance cost. 
 
 ## Usage
-Some example use cases are showcased in fit_orbit.py. 
+Some example use cases are showcased in the driver script "fit_orbit.py". 
 
 ## Contributors
 Federico Spada
