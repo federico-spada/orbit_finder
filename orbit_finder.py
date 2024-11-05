@@ -459,7 +459,7 @@ def SummaryPlot(object_name, Data, Fit, scaled=True):
     locator = mdates.AutoDateLocator()
     formatter = mdates.ConciseDateFormatter(locator)
     ### make plot
-    fig, axes = plt.subplot_mosaic('AAA.;BBBY;CCCZ', figsize=(7, 7), constrained_layout=True)
+    fig, axes = plt.subplot_mosaic('AAAX;BBBY;CCCZ', figsize=(7, 7), constrained_layout=True)
     # plot heliocentric and geocentric distance
     axes['A'].plot(tt, dh, '.', label='heliocentric')
     axes['A'].plot(tt, dg, 's', ms=3, label='geocentric')
@@ -488,6 +488,12 @@ def SummaryPlot(object_name, Data, Fit, scaled=True):
     axes['C'].xaxis.set_major_formatter(formatter)
     axes['C'].set_ylim(ylim)
     axes['C'].grid()
+    #
+    axes['X'].axis('off')
+    axes['X'].text(-0.1, 0.9, 'Fit Epoch:')
+    axes['X'].text(-0.1, 0.8, spice.et2utc(Fit['ET0']*cf.days,'C', 0))
+    axes['X'].text(-0.1, 0.65, 'Object:')
+    axes['X'].text(-0.1, 0.55, object_name) 
     # add histograms
     axes['Y'].hist(res_ra[flag], bins=20, orientation='horizontal', color='#00356B')
     axes['Y'].axhline(color='orangered', lw=0.7)
@@ -531,7 +537,7 @@ def SummaryText(object_name, Data, Fit):
         f.write('\n')        
         f.write('Fit Epoch  : '+spice.et2utc(Fit['ET0']*cf.days, 'C', 2)+'\n')
         f.write('\n')
-        f.write('State vector (J2000 frame)\n')
+        f.write('State vector (J2000 heliocentric frame)\n')
         for i, x_i in enumerate(Fit['x']):
             if i < 6:
                 scale = 1.
@@ -540,7 +546,7 @@ def SummaryText(object_name, Data, Fit):
             f.write('%s = %13.9f ± %13.10f %s\n' % (xs1[i], x_i*scale, 
                     np.sqrt(Fit['Cov'][i,i])*scale, xs2[i]))            
         f.write('\n')
-        f.write('Orbital elements (ECLIPJ2000 frame)\n')          
+        f.write('Orbital elements (ECLIPJ2000 heliocentric frame)\n')          
         for i in range(6):
             f.write('%s = %13.9f ± %13.10f %s\n' % (ee1[i], oe[i], sigma_oe[i], ee2[i]))
         f.write('\n')
