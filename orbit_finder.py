@@ -253,42 +253,41 @@ def PropagateAssist(x, et0, et, RS, forces):
     return y, P, S
         
 def RunAssist(x, et0, et, tau, forces):
+    # set up REBOUND simulation with ASSIST extras
+    def init_sim(t0, p0, ephem, params_ngforce):
+        sim = rebound.Simulation()
+        sim.add(p0)
+        sim.t = t0
+        extras = assist.Extras(sim, ephem)
+        extras.particle_params = params_ngforce
+        extras.forces = forces
+        return sim, extras
     t0 = et0
     t = et - tau
     p_  = x[6:]
-    # set up rebound simulation and ephemerides extension
+    # set up ASSIST ephemerides extension
     ephem = assist.Ephem(cf.assist_planets_file, cf.assist_asteroids_file)
-    sim = rebound.Simulation()
-    # initial position of the Sun
-    sun0 = ephem.get_particle("sun", t0)
     # initial conditions of test particle
-    part0_h = rebound.Particle( x = x[0],  y = x[1],  z = x[2],
-                               vx = x[3], vy = x[4], vz = x[5] )
-    # change from heliocentric to SS barycentric frame
-    part0 = sun0 + part0_h
-    # initialize simulation 
-    sim.add(part0)
-    sim.t = t0
-    extras = assist.Extras(sim, ephem)
+    p0_h = rebound.Particle(x=x[0], y=x[1], z=x[2], vx=x[3], vy=x[4], vz=x[5])
+    # change heliocentric -> SSB frame (used by ASSIST)
+    p0 = ephem.get_particle("sun", t0) + p0_h
     # parameters for non-gravitational forces
     nparms = len(p_)
     params_ngforce = np.zeros(3)
     for k in range(nparms):
         params_ngforce[k] = p_[k]
-    extras.particle_params = params_ngforce
-    extras.forces = forces
+    # initialize simulation
+    sim, extras = init_sim(t0, p0, ephem, params_ngforce)
     # prepare for integration 
     m = len(t)
     y = np.zeros((m,6))
-    ### first integration: get state vector with nominal values of p_
+    ### first integration with nominal values of p_
     for i, ti in enumerate(t):
         extras.integrate_or_interpolate(ti)
         ref = ephem.get_particle("sun", ti)
         y[i,0:3] = np.array(sim.particles[0].xyz) - np.array(ref.xyz)
         y[i,3:6] = np.array(sim.particles[0].vxyz)
-    sim = None
-    ### set up integration with varying p_ components, to evaluate the
-    ### sensitivity matrix
+    ### set up integration with varying p_ components, to evaluate the sensitivity matrix
     eps = 1e-6
     S = np.zeros((m,6,nparms))
     y1 = np.zeros(6)
@@ -296,11 +295,7 @@ def RunAssist(x, et0, et, tau, forces):
         delta_params_ngforce = np.zeros(3)
         delta_params_ngforce[k] = params_ngforce[k] * eps
         # initialize simulation 
-        sim = rebound.Simulation()
-        sim.add(part0)
-        sim.t = t0
-        extras = assist.Extras(sim, ephem)
-        extras.particle_params = params_ngforce + delta_params_ngforce
+        sim, extras = init_sim(t0, p0, ephem, params_ngforce+delta_params_ngforce)         
         for i, ti in enumerate(t):
             extras.integrate_or_interpolate(ti)
             ref = ephem.get_particle("sun", ti)
@@ -308,30 +303,13 @@ def RunAssist(x, et0, et, tau, forces):
             y1[3:6] = np.array(sim.particles[0].vxyz)
             for j in range(6):
                 S[i,j,k] = (y1[j] - y[i,j])/(delta_params_ngforce[k])
-        sim = None
-    ##
-    ### To evaluate state transition matrix use variational particles
-    ### Note: for some reason, this integration must be done separately
-    ### I am not really sure why, but it must be due to the way variational
-    ### particles are treated in REBOUND/ASSIST
-    # initialize simulation 
-    sim = rebound.Simulation()
-    sim.add(part0)
-    sim.t = t0
-    extras = assist.Extras(sim, ephem)
+    ### evaluate state transition matrix using REBOUND variational particles
+    # initialize simulation - note: STM simulation _must_ be run with NG forces set to zero! 
+    sim, extras = init_sim(t0, p0, ephem, np.zeros(3))
     # add variational particles to calculate state transition matrix
-    vp_x0 = sim.add_variation(testparticle=0,order=1)
-    vp_x0.particles[0].x = 1
-    vp_y0 = sim.add_variation(testparticle=0,order=1)
-    vp_y0.particles[0].y = 1
-    vp_z0 = sim.add_variation(testparticle=0,order=1)
-    vp_z0.particles[0].z = 1
-    vp_vx0 = sim.add_variation(testparticle=0,order=1)
-    vp_vx0.particles[0].vx = 1
-    vp_vy0 = sim.add_variation(testparticle=0,order=1)
-    vp_vy0.particles[0].vy = 1
-    vp_vz0 = sim.add_variation(testparticle=0,order=1)
-    vp_vz0.particles[0].vz = 1
+    vp = [sim.add_variation(testparticle=0, order=1) for _ in range(6)]
+    for j, axis in enumerate(['x', 'y', 'z', 'vx', 'vy', 'vz']):
+        setattr(vp[j].particles[0], axis, 1)
     # prepare for integration 
     m = len(t)
     P = np.zeros((m,6,6))
@@ -339,12 +317,7 @@ def RunAssist(x, et0, et, tau, forces):
     for i, ti in enumerate(t):
         extras.integrate_or_interpolate(ti)
         # state transition matrix
-        P[i,:,0] = np.r_[ vp_x0.particles[0].xyz,  vp_x0.particles[0].vxyz ]
-        P[i,:,1] = np.r_[ vp_y0.particles[0].xyz,  vp_y0.particles[0].vxyz ]
-        P[i,:,2] = np.r_[ vp_z0.particles[0].xyz,  vp_z0.particles[0].vxyz ]
-        P[i,:,3] = np.r_[ vp_vx0.particles[0].xyz, vp_vx0.particles[0].vxyz ]
-        P[i,:,4] = np.r_[ vp_vy0.particles[0].xyz, vp_vy0.particles[0].vxyz ]
-        P[i,:,5] = np.r_[ vp_vz0.particles[0].xyz, vp_vz0.particles[0].vxyz ]
+        P[i] = np.array([np.r_[vp1.particles[0].xyz, vp1.particles[0].vxyz] for vp1 in vp]).T
     return y, P, S
 
 # SECOND OPTION: integrate the equations of motion with the SciPy ode solver
