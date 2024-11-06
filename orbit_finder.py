@@ -32,13 +32,13 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
     # store astrometric catalog code, for debiasing:
     catc = np.array([line[71] for line in lines])
     # space telescopes lines
-    space_tel_codes = ['250', 'C57']
-    spt_raw = [line for line in lines if line[77:80] in space_tel_codes]
+    spt_raw = [line for line in lines if line[14] in ['s', 'S']]
     spt_lines = [spt_raw[i]+spt_raw[i+1] for i in range(0, len(spt_raw)-1, 2)]
+    space_tel_codes = np.unique([line[77:80] for line in spt_lines]).tolist()
     # roving observer lines
-    rovng_obs_codes = ['247', '270', 'War']
-    rvg_raw = [line for line in lines if line[77:80] in rovng_obs_codes]
+    rvg_raw = [line for line in lines if line[14] in ['v', 'V']]
     rvg_lines = [rvg_raw[i]+rvg_raw[i+1] for i in range(0, len(rvg_raw)-1, 2)]
+    rovng_obs_codes = np.unique([line[77:80] for line in rvg_lines]).tolist()
     # observing station code
     OC = np.array([line[77:80] for line in obs_lines])
     # observing epoch parsed into SPICE's Ephemeris Time (~TDB)
@@ -58,7 +58,8 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
         if code in space_tel_codes:
             # space telescopes entries
             line1 = [line for line in spt_lines if (line[15:32] == obs_lines[k][15:32])][0]
-            RS[k,:] = [float(x.replace(' ','')) for x in line1[114:].split('    ')[:3]]
+            xyz = line1[114:].split()
+            RS[k,:] = float(xyz[0]+xyz[1]), float(xyz[2]+xyz[3]), float(xyz[4]+xyz[5])
         elif code in rovng_obs_codes:
             # roving observers entries
             line1 = [line for line in rvg_lines if (line[15:32] == obs_lines[k][15:32])][0]
