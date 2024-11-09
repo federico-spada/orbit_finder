@@ -119,7 +119,7 @@ def DebiasData(bias_file, Data):
     dRA, dDE, pmRA, pmDE = np.array( [bias[pid[i], 4*cid[i]:4*cid[i]+4] if cid[i] != -1
                                   else [0, 0, 0, 0] for i in range(len(Data['ET']))] ).T
     count = sum([c >= 0 for c in cid])
-    print('Debiased astrometric data at %i epochs.' % count)
+    print('Bias correction applied to astrometric data at %i epochs.' % count)
     dt = Data['ET']/365.25
     delta_ra = (dRA + dt * pmRA/1e3) / np.cos(Data['De'])
     delta_de =  dDE + dt * pmDE/1e3
@@ -140,14 +140,13 @@ def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter):
     n, m = len(x0), len(Data['ET'])
     # initializations 
     x = x0
-    RMS0 = 1.
     flag = np.repeat(True, m) # epochs included in fit 
     Cov = np.zeros((n, n)) 
     m_rec, m_rej, m_use = 0, 0, m
     chi2 = np.zeros(m)
     ### begin main loop of differential correction
     print('Differential correction begins.')
-    print('#iter   red.chisq.    norm        ||dx||         #rec   #rej  #use frac')
+    print('#iter.     RMS       chi-square    ||dx||_M    ||dx||_2      #rec   #rej   #use frac')
     for k in range(max_iter):
         # initialize normal equations
         BTWB = np.zeros((n, n))
@@ -176,8 +175,10 @@ def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter):
         # update RMS and norm of correction
         RMS = np.sqrt(ress/m)
         nrm = np.sqrt((dx @ BTWB @ dx)/n)
+        q = np.r_[zm[:,0], zm[:,1]]/np.r_[Data['sigma_RA'], Data['sigma_De']]
+        chisq = np.sum(q[np.r_[flag, flag]]**2)
         ### screen output
-        print('%4i   %12.6e %12.6e %12.6e %6i %6i %6i %4.2f' % (k, RMS, nrm,
+        print('%4i   %12.6e %12.6e %12.6e %12.6e %6i %6i %6i %4.2f' % (k, RMS, chisq, nrm,
                np.linalg.norm(dx), m_rec, m_rej, m_use, m_use/m))
         # >>> this section handles outliers rejection/recovery
         # adjust rejection threshld for this step:
@@ -199,16 +200,13 @@ def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter):
         m_use = sum(flag)
         # <<<  
         # condition to end loop:
-        stop = (abs(RMS-RMS0)/RMS0 < 1e-3) | (RMS < 0.5) \
-               | (nrm < 0.5) | (np.linalg.norm(dx) < 1e-7)
-        RMS0 = RMS
-        if stop:
+        if (RMS < 0.5) | (nrm < 0.5) | (np.linalg.norm(dx) < 5e-8):
             break
     print('End of differential correction.')
     res = np.r_[zm[:,0], zm[:,1]]
     # output as a dictionary
-    Fit = {'x':x, 'Cov':Cov, 'res':res, 'flag':flag, 'RMS':RMS, 'norm':nrm, 
-           'ET0':et0, 'y':ym}
+    Fit = {'x':x, 'Cov':Cov, 'res':res, 'flag':flag, 'chi-square':chisq, 'RMS':RMS, 
+           'norm':nrm, 'ET0':et0, 'y':ym}
     return Fit
 
 def ResidualsAndPartials(Data, et0, x, propagator, prop_args):
@@ -485,9 +483,9 @@ def SummaryPlot(object_name, Data, Fit, scaled=True):
 def SummaryText(object_name, Data, Fit):
     n = len(Fit['x']) 
     xs1 = ['x ', 'y ', 'z ', 'vx', 'vy', 'vz', 'A1', 'A2', 'A3']
-    xs2 = np.r_[np.repeat('AU', 3), np.repeat('AU/d', 3), np.repeat('AU/d^2', 3)]
+    xs2 = np.r_[np.repeat('(au)', 3), np.repeat('(au/d)', 3), np.repeat('(10^8 au/d^2)', 3)]
     ee1 = ['a', 'e', 'I', 'Ω', 'ω', 'M']
-    ee2 = ['AU', ' ', 'deg', 'deg', 'deg', 'deg']
+    ee2 = ['(au)', ' ', '(deg)', '(deg)', '(deg)', '(deg)']
     U = spice.pxform( 'J2000', 'ECLIPJ2000', Fit['ET0']*cf.days )
     r_, v_ = U @ Fit['x'][0:3],   U @ Fit['x'][3:6]
     OE = spice.oscltx(np.r_[r_, v_], Fit['ET0']*cf.days, cf.mu_s)
@@ -504,6 +502,7 @@ def SummaryText(object_name, Data, Fit):
             f.write('Object name: '+object_name+'\n')
         f.write('\n')
         f.write('RMS = %8.3f\n' % Fit['RMS'])
+        f.write('χ^2 = %8.3f\n' % Fit['chi-square'])
         f.write('\n')
         f.write('# epochs = %4i \n' % sum(Fit['flag']))
         f.write('First epoch: '+spice.et2utc(Data['ET'][ 0]*cf.days, 'C', 2)+'\n')
@@ -517,12 +516,12 @@ def SummaryText(object_name, Data, Fit):
                 scale = 1.
             else:
                 scale = 1e8
-            f.write('%s = %13.9f ± %13.10f %s\n' % (xs1[i], x_i*scale, 
+            f.write('%s = %15.9f ± %13.6e %s\n' % (xs1[i], x_i*scale, 
                     np.sqrt(Fit['Cov'][i,i])*scale, xs2[i]))            
         f.write('\n')
         f.write('Orbital elements (ECLIPJ2000 heliocentric frame)\n')          
         for i in range(6):
-            f.write('%s = %13.9f ± %13.10f %s\n' % (ee1[i], oe[i], sigma_oe[i], ee2[i]))
+            f.write('%s = %15.9f ± %13.6e %s\n' % (ee1[i], oe[i], sigma_oe[i], ee2[i]))
         f.write('\n')
 
 ### Get Jacobian of classical orbital elements with respect to state vector, and its inverse
