@@ -18,14 +18,14 @@ spice.furnsh('spice.mkn')
 # (523599) 2003 RM 
 #object_name = '523599'
 #fit_epoch = '2023-09-13.0'
-#parms0_ = np.array([1e-11, 1e-11, 1e-11])
+#parms0_ = np.array([1e-11, 1e-11])
 #propagator = PropagateAssist
 #prop_args  = cf.all_forces
 
 # 1I/'Oumuamua 
 object_name = '1I'
 fit_epoch = '2017-12-01.0'
-parms0_ = np.array([1e-10]) # purely radial!
+parms0_ = np.array([1e-10]) 
 propagator = PropagateAssist
 prop_args  = cf.all_forces 
 
@@ -36,12 +36,15 @@ prop_args  = cf.all_forces
 #propagator = PropagateSciPy
 #prop_args = NonGravAccel
 
+start_date = None
+end_date = None
+
 
 ### Load data
 fobss = 'mpc_obs.txt'
 fdata = object_name+'.txt'
-Data = LoadDataMPC(fobss, fdata)
-et0 = spice.str2et(fit_epoch)/cf.days
+Data = LoadDataMPC(fobss, fdata, start_date=start_date, end_date=end_date)
+et0 = spice.str2et(fit_epoch)/cf.DAYS
 max_iter = 25
 
 fbias = 'bias.dat'

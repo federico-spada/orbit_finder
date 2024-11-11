@@ -22,8 +22,8 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
                  if (line.strip()[3:12] != '         ')]
     obss = np.array([line[0:3] for line in lines])
     lons = np.array([float(line[3:13]) for line in lines])
-    rcos = np.array([float(line[13:21])*cf.Re for line in lines])
-    rsin = np.array([float(line[21:30])*cf.Re for line in lines])
+    rcos = np.array([float(line[13:21])*cf.RE for line in lines])
+    rsin = np.array([float(line[21:30])*cf.RE for line in lines])
     # load observational data, parsing an input file in MPC format
     with open(objdata_file, 'r') as file:
         lines = file.readlines()
@@ -42,16 +42,16 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
     # observing station code
     OC = np.array([line[77:80] for line in obs_lines])
     # observing epoch parsed into SPICE's Ephemeris Time (~TDB)
-    et = np.array([spice.str2et(line[15:25])+float(line[25:32])*cf.days for line in obs_lines])
+    et = np.array([spice.str2et(line[15:25])+float(line[25:32])*cf.DAYS for line in obs_lines])
     # observed right ascension
     ra = np.array([np.deg2rad(15.*float(line[32:34])+float(line[35:37])/4.
                    +float(line[38:44])/240.) for line in obs_lines])
     # observed declination
     de = np.array([np.deg2rad( np.sign(float(line[44:47]))*(abs(float(line[44:47]))
                   +float(line[48:50])/60.+float(line[51:56])/3600.) ) for line in obs_lines])
-    # uncertainties, including cos(delta) factor for RA
-    s_ra = np.deg2rad(2./3600)*np.cos(de)
-    s_de = np.repeat(np.deg2rad(2./3600), len(de))
+    # uncertainties, including cos(delta) factor for RA; note the 2. arc sec placeholder
+    s_ra = np.deg2rad(2./3600.)*np.cos(de)
+    s_de = np.repeat(np.deg2rad(2./3600.), len(de))
     # observer location, in heliocentric J2000 frame
     RS = np.zeros((len(OC), 3))
     for k, code in enumerate(OC):
@@ -64,7 +64,7 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
             # roving observers entries
             line1 = [line for line in rvg_lines if (line[15:32] == obs_lines[k][15:32])][0]
             lon, lat, alt = [float(x) for x in line1[114:].split()[:3]]
-            R0 = spice.georec(np.radians(lon), np.radians(lat), alt/1e3, cf.Re, cf.fe)
+            R0 = spice.georec(np.radians(lon), np.radians(lat), alt/1e3, cf.RE, cf.FE)
             U = spice.pxform( 'ITRF93', 'J2000', et[k] )
             RS[k,:] = U @ R0
         else:
@@ -78,8 +78,8 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
     # replace default uncertainties with those from Veres et al. 2017, if available
     for key in cf.uncertainty:
         ii = np.where(OC == key)[0]
-        s_ra[ii] = np.deg2rad(cf.uncertainty[key]/3600)*np.cos(de[ii])
-        s_de[ii] = np.deg2rad(cf.uncertainty[key]/3600)
+        s_ra[ii] = np.deg2rad(cf.uncertainty[key]/3600.)*np.cos(de[ii])
+        s_de[ii] = np.deg2rad(cf.uncertainty[key]/3600.)
     # >>> (optional) restrict epochs to the range between start_date and end_date
     if not start_date:
         start_date = spice.et2utc(et[0],'ISOC',0)
@@ -100,7 +100,7 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
     # <<<
     # change units to AU, days 
     RS = RS / cf.AU
-    et = et / cf.days
+    et = et / cf.DAYS
     ### return output as dictionary
     Data = {'ET':et[mask], 'OC':OC[mask], 'RS':RS[mask], 'Cat':catc[mask],
             'RA':ra[mask], 'De':de[mask], 'sigma_RA':s_ra[mask], 'sigma_De':s_de[mask]}
@@ -148,12 +148,13 @@ def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter):
     print('Differential correction begins.')
     print('#iter.     RMS       chi-square    ||dx||_M    ||dx||_2      #rec   #rej   #use frac')
     for k in range(max_iter):
-        # initialize normal equations
+        # initialize normal equations and residuals
         BTWB = np.zeros((n, n))
         BTWz = np.zeros(n)
         ress = 0.
         # get residuals and partials for current initial state vector
         zm, Bm, ym = ResidualsAndPartials(Data, et0, x, propagator, prop_args)
+        # go through all epochs and accumulate normal equations for those flagged for inclusion
         for i in range(m):
             sigma = np.r_[Data['sigma_RA'][i], Data['sigma_De'][i]]
             W = np.diag(1./sigma**2)
@@ -164,22 +165,28 @@ def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter):
                 # accumulate normal equations
                 BTWB += (B.T @ W @ B)
                 BTWz += (B.T @ W @ z)
-                ress += (z @ W @ z)/2.
-            # calculate post-fit residual covariance and chi-square for epoch i
-            G = np.diag(sigma**2) + (1.-2.*flag[i])*(B @ Cov @ B.T)
+                ress += (z @ W @ z)
+                # covariance of post-fit residual if epoch i was included
+                G = np.diag(sigma**2) - (B @ Cov @ B.T)
+            else:
+                # covariance of post-fit residual if epoch i was _not_ included
+                G = np.diag(sigma**2) + (B @ Cov @ B.T)
             chi2[i] = z @ np.linalg.inv(G) @ z
-        ### update initial state vector and its covariance
+        ### solve normal eqns. and update initial state vector and its covariance
         dx = np.linalg.solve(BTWB, BTWz)
         x = x + dx
         Cov = np.linalg.inv(BTWB)
         # update RMS and norm of correction
-        RMS = np.sqrt(ress/m)
+        RMS = np.sqrt(ress/2./m_use)
         nrm = np.sqrt((dx @ BTWB @ dx)/n)
         q = np.r_[zm[:,0], zm[:,1]]/np.r_[Data['sigma_RA'], Data['sigma_De']]
         chisq = np.sum(q[np.r_[flag, flag]]**2)
         ### screen output
         print('%4i   %12.6e %12.6e %12.6e %12.6e %6i %6i %6i %4.2f' % (k, RMS, chisq, nrm,
                np.linalg.norm(dx), m_rec, m_rej, m_use, m_use/m))
+        # check for convergence to end loop:
+        if (RMS < 0.5) | (nrm < 0.5) | (np.linalg.norm(dx) < 5e-8):
+            break
         # >>> this section handles outliers rejection/recovery
         # adjust rejection threshld for this step:
         chi2_rej = max( chi2_rej0 + 400.*(1.2)**(-m_use), alpha * chi2[flag].max() ) 
@@ -188,9 +195,9 @@ def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter):
         # ... and update their flag
         flag[i_rec] = True
         m_rec = len(i_rec)
-        # mark epochs to be excluded in next step...
+        # mark epochs to be excluded from fit at next step...
         i_mrk = np.where((flag == True) & (chi2 > chi2_rej))[0]
-        # but only exclude up to (frac * m_use), in decreasing order of residual:
+        # ...but only exclude up to (frac * m_use), in decreasing order of residual:
         m_rej = min(len(i_mrk), int(frac*m_use))
         chi2_mrk = np.flip(np.sort(chi2[i_mrk]))
         if len(i_mrk) > 0:
@@ -199,10 +206,8 @@ def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter):
         # update total number of epochs that will be used in the fit at next step:
         m_use = sum(flag)
         # <<<  
-        # condition to end loop:
-        if (RMS < 0.5) | (nrm < 0.5) | (np.linalg.norm(dx) < 5e-8):
-            break
     print('End of differential correction.')
+    # residuals of converged fit:
     res = np.r_[zm[:,0], zm[:,1]]
     # output as a dictionary
     Fit = {'x':x, 'Cov':Cov, 'res':res, 'flag':flag, 'chi-square':chisq, 'RMS':RMS, 
@@ -248,7 +253,7 @@ def PropagateAssist(x, et0, et, RS, forces):
     tau = np.zeros(m)
     for j in range(2):
         y, P, S = RunAssist(x, et0, et, tau, forces)
-        tau = np.array([np.linalg.norm(y[i,:3]-RS[i,:])/cf.cc for i in range(m)])
+        tau = np.array([np.linalg.norm(y[i,:3]-RS[i,:])/cf.CC for i in range(m)])
     return y, P, S
         
 def RunAssist(x, et0, et, tau, forces):
@@ -347,7 +352,7 @@ def PropagateSciPy(x, et0, et, RS, aNG):
         teval_b = et[ii_b]-tau[ii_b]
         teval_f = et[ii_f]-tau[ii_f]
         sol = np.array([sol_b.sol(tb).T for tb in teval_b] + [sol_f.sol(tf).T for tf in teval_f]) 
-        tau = np.array([np.linalg.norm(sol[i,:3]-RS[i,:])/cf.cc for i in range(m)])
+        tau = np.array([np.linalg.norm(sol[i,:3]-RS[i,:])/cf.CC for i in range(m)])
     # prepare output
     y = np.reshape(sol[:,  :6], (m, 6))
     P = np.reshape(sol[:,6:42], (m, 6, 6))
@@ -361,21 +366,19 @@ def Derivs(t, y, parms_,aNG):
     r = np.linalg.norm(r_)
     v = np.linalg.norm(v_)
     # main term
-    f_ = -cf.mu_s*r_/r**3
+    f_ = -cf.MU_S*r_/r**3
     # perturbations
     p_ = 0
     # planets
-    for i in range(len(cf.mu_p)):
-        s_, _ = spice.spkpos(cf.tgP[i], t*cf.days, 'J2000', 'NONE', '10')
-        s_ = s_/cf.AU
-        p_ = p_ - cf.mu_p[i]*( (r_-s_)/np.linalg.norm(r_-s_)**3 + s_/np.linalg.norm(s_)**3 )
+    for i, TAG in enumerate(cf.TAG_P):
+        s_ = spice.spkpos(TAG, t*cf.DAYS, 'J2000', 'NONE', '10')[0]/cf.AU
+        p_ = p_ - cf.MU_P[i]*( (r_-s_)/np.linalg.norm(r_-s_)**3 + s_/np.linalg.norm(s_)**3 )
     # asteroids
-    for i in range(len(cf.mu_a)):
-        s_, _ = spice.spkpos(cf.tgA[i], t*cf.days, 'J2000', 'NONE', '10')
-        s_ = s_/cf.AU
-        p_ = p_ - cf.mu_a[i]*( (r_-s_)/np.linalg.norm(r_-s_)**3 + s_/np.linalg.norm(s_)**3 )
+    for i, TAG in enumerate(cf.TAG_A):
+        s_ = spice.spkpos(TAG, t*cf.DAYS, 'J2000', 'NONE', '10')[0]/cf.AU
+        p_ = p_ - cf.MU_A[i]*( (r_-s_)/np.linalg.norm(r_-s_)**3 + s_/np.linalg.norm(s_)**3 )
     # GR correction
-    p_ = p_ + (cf.mu_s/cf.cc**2/r**3)*( (4*cf.mu_s/r - v**2)*r_ + 4*np.dot(r_,v_)*v_ )
+    p_ = p_ + (cf.MU_S/cf.CC**2/r**3)*( (4*cf.MU_S/r - v**2)*r_ + 4*np.dot(r_,v_)*v_ )
     # non-gravitational term
     if not aNG:
        aNG_ = np.zeros(3)
@@ -390,13 +393,12 @@ def Derivs(t, y, parms_,aNG):
     ### variational equations
     PHI = np.reshape(y[6:42], (6, 6))
     # main term
-    F = -cf.mu_s/r**3*( np.eye(3) - 3*np.outer(r_, r_)/r**2)
+    F = -cf.MU_S/r**3*( np.eye(3) - 3*np.outer(r_, r_)/r**2)
     # point mass perturbers (planets only!)
     P = np.zeros((3,3))
-    for i in range(len(cf.mu_p)):
-        s_, _ = spice.spkpos(cf.tgP[i], t*cf.days, 'J2000', 'NONE', '10')
-        s_ = s_/cf.AU
-        P = P - cf.mu_p[i]/np.linalg.norm(r_-s_)**3 \
+    for i, TAG in enumerate(cf.TAG_P):
+        s_ = spice.spkpos(TAG, t*cf.DAYS, 'J2000', 'NONE', '10')[0]/cf.AU
+        P = P - cf.MU_P[i]/np.linalg.norm(r_-s_)**3 \
           * ( np.eye(3) - 3*np.outer(r_-s_,r_-s_)/np.linalg.norm(r_-s_)**2 )
     # asteroids, relativity, and radiation pressure are omitted in the variational eqns.
     G = F + P
@@ -424,9 +426,9 @@ def SummaryPlot(object_name, Data, Fit, scaled=True):
     else:
        res_ra, res_de, unit, ylim = z[:m] * 206265., z[m:] * 206265., '(\")', (-10, 10)
     not_flag = np.logical_not(flag)
-    tt = np.array([datetime.fromisoformat(spice.et2utc(eti*cf.days,'ISOC', 0)) for eti in et])
+    tt = np.array([datetime.fromisoformat(spice.et2utc(eti*cf.DAYS,'ISOC', 0)) for eti in et])
     dh = np.linalg.norm(y[:,:3], axis=1)
-    rE, _ = spice.spkpos('399', et*cf.days, 'J2000', 'NONE', '10')
+    rE, _ = spice.spkpos('399', et*cf.DAYS, 'J2000', 'NONE', '10')
     dg = np.linalg.norm(y[:,:3]-rE/cf.AU, axis=1)
     locator = mdates.AutoDateLocator()
     formatter = mdates.ConciseDateFormatter(locator)
@@ -463,7 +465,7 @@ def SummaryPlot(object_name, Data, Fit, scaled=True):
     #
     axes['X'].axis('off')
     axes['X'].text(-0.1, 0.9, 'Fit Epoch:')
-    axes['X'].text(-0.1, 0.8, spice.et2utc(Fit['ET0']*cf.days,'C', 0))
+    axes['X'].text(-0.1, 0.8, spice.et2utc(Fit['ET0']*cf.DAYS,'C', 0))
     axes['X'].text(-0.1, 0.65, 'Object:')
     axes['X'].text(-0.1, 0.55, object_name) 
     # add histograms
@@ -483,17 +485,17 @@ def SummaryPlot(object_name, Data, Fit, scaled=True):
 def SummaryText(object_name, Data, Fit):
     n = len(Fit['x']) 
     xs1 = ['x ', 'y ', 'z ', 'vx', 'vy', 'vz', 'A1', 'A2', 'A3']
-    xs2 = np.r_[np.repeat('(au)', 3), np.repeat('(au/d)', 3), np.repeat('(10^8 au/d^2)', 3)]
+    xs2 = np.r_[np.repeat('(au)', 3), np.repeat('(au/d)', 3), np.repeat('(10^-8 au/d^2)', 3)]
     ee1 = ['a', 'e', 'I', 'Ω', 'ω', 'M']
     ee2 = ['(au)', ' ', '(deg)', '(deg)', '(deg)', '(deg)']
-    U = spice.pxform( 'J2000', 'ECLIPJ2000', Fit['ET0']*cf.days )
+    U = spice.pxform( 'J2000', 'ECLIPJ2000', Fit['ET0']*cf.DAYS )
     r_, v_ = U @ Fit['x'][0:3],   U @ Fit['x'][3:6]
-    OE = spice.oscltx(np.r_[r_, v_], Fit['ET0']*cf.days, cf.mu_s)
+    OE = spice.oscltx(np.r_[r_, v_], Fit['ET0']*cf.DAYS, cf.MU_S)
     oe = np.r_[ OE[9], OE[1], np.rad2deg(OE[2:6]) ] 
-    A = JacobianTBP(r_, v_, cf.mu_s)[1]
+    A = JacobianTBP(r_, v_, cf.MU_S)[1]
     Cov_oe = A @ Fit['Cov'][:6,:6] @ A.T
     sigma_oe = np.sqrt(np.diagonal(Cov_oe))
-    sigma_oe[2:] *= 180/np.pi 
+    sigma_oe[2:] *= 180/np.pi
     with open('summary_fit.txt', 'w') as f:
         f.write('Orbit_Finder - '+datetime.today().strftime('%Y-%m-%d %H:%M:%S')+'\n\n')
         if 'C_' in object_name:
@@ -505,10 +507,10 @@ def SummaryText(object_name, Data, Fit):
         f.write('χ^2 = %8.3f\n' % Fit['chi-square'])
         f.write('\n')
         f.write('# epochs = %4i \n' % sum(Fit['flag']))
-        f.write('First epoch: '+spice.et2utc(Data['ET'][ 0]*cf.days, 'C', 2)+'\n')
-        f.write('Last  epoch: '+spice.et2utc(Data['ET'][-1]*cf.days, 'C', 2)+'\n')
+        f.write('First epoch: '+spice.et2utc(Data['ET'][ 0]*cf.DAYS, 'C', 2)+'\n')
+        f.write('Last  epoch: '+spice.et2utc(Data['ET'][-1]*cf.DAYS, 'C', 2)+'\n')
         f.write('\n')        
-        f.write('Fit Epoch  : '+spice.et2utc(Fit['ET0']*cf.days, 'C', 2)+'\n')
+        f.write('Fit Epoch  : '+spice.et2utc(Fit['ET0']*cf.DAYS, 'C', 2)+'\n')
         f.write('\n')
         f.write('State vector (J2000 heliocentric frame)\n')
         for i, x_i in enumerate(Fit['x']):
@@ -520,7 +522,7 @@ def SummaryText(object_name, Data, Fit):
                     np.sqrt(Fit['Cov'][i,i])*scale, xs2[i]))            
         f.write('\n')
         f.write('Orbital elements (ECLIPJ2000 heliocentric frame)\n')          
-        for i in range(6):
+        for i in range(len(oe)):
             f.write('%s = %15.9f ± %13.6e %s\n' % (ee1[i], oe[i], sigma_oe[i], ee2[i]))
         f.write('\n')
 
