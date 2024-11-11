@@ -47,7 +47,7 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
     ra = np.array([np.deg2rad(15.*float(line[32:34])+float(line[35:37])/4.
                    +float(line[38:44])/240.) for line in obs_lines])
     # observed declination
-    de = np.array([np.deg2rad( np.sign(float(line[44:47]))*(abs(float(line[44:47]))
+    de = np.array([np.deg2rad( float(line[44]+'1') * (abs(float(line[45:47]))
                   +float(line[48:50])/60.+float(line[51:56])/3600.) ) for line in obs_lines])
     # uncertainties, including cos(delta) factor for RA; note the 2. arc sec placeholder
     s_ra = np.deg2rad(2./3600.)*np.cos(de)
@@ -98,11 +98,13 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
     # all epochs outside this range will be dropped:
     mask = range(i_start, i_end)
     # <<<
+    # save epochs as datetime objects for later use
+    dttm = np.array([datetime.fromisoformat(spice.et2utc(eti, 'ISOC', 7)) for eti in et])
     # change units to AU, days 
     RS = RS / cf.AU
     et = et / cf.DAYS
     ### return output as dictionary
-    Data = {'ET':et[mask], 'OC':OC[mask], 'RS':RS[mask], 'Cat':catc[mask],
+    Data = {'ET':et[mask], 'OC':OC[mask], 'RS':RS[mask], 'Cat':catc[mask], 'Obs.Epoch':dttm,
             'RA':ra[mask], 'De':de[mask], 'sigma_RA':s_ra[mask], 'sigma_De':s_de[mask]}
     return Data    
 
@@ -418,7 +420,8 @@ def Derivs(t, y, parms_,aNG):
 
 ### OUTPUT --------------------------------------------------------------------
 def SummaryPlot(object_name, Data, Fit, scaled=True):
-    et, s_ra, s_de, RS = Data['ET'], Data['sigma_RA'], Data['sigma_De'], Data['RS'] 
+    et, s_ra, s_de, RS = Data['ET'], Data['sigma_RA'], Data['sigma_De'], Data['RS']
+    tt = Data['Obs.Epoch']
     x, z, flag, y = Fit['x'], Fit['res'], Fit['flag'], Fit['y'] 
     m = len(et)
     if scaled:
@@ -426,7 +429,6 @@ def SummaryPlot(object_name, Data, Fit, scaled=True):
     else:
        res_ra, res_de, unit, ylim = z[:m] * 206265., z[m:] * 206265., '(\")', (-10, 10)
     not_flag = np.logical_not(flag)
-    tt = np.array([datetime.fromisoformat(spice.et2utc(eti*cf.DAYS,'ISOC', 0)) for eti in et])
     dh = np.linalg.norm(y[:,:3], axis=1)
     rE, _ = spice.spkpos('399', et*cf.DAYS, 'J2000', 'NONE', '10')
     dg = np.linalg.norm(y[:,:3]-rE/cf.AU, axis=1)
