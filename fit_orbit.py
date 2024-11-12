@@ -6,28 +6,33 @@ from astroquery.jplhorizons import Horizons
 
 spice.furnsh('spice.mkn')
 
+forces = ['SUN', 'PLANETS', 'ASTEROIDS', 'NON_GRAVITATIONAL',
+          'EARTH_HARMONICS', 'SUN_HARMONICS', 'GR_EIH']
+ma73_h2o = {'alpha':0.1113, 'r0':2.808, 'm':2.15, 'n':5.093, 'k':4.6142}
+inv_rsq  = {'alpha':1., 'r0':1, 'm':2., 'n':5.093, 'k':0.}
+
 # A few use-cases
 
 # (6489) Golevka 
-#object_name = '6489'
-#fit_epoch = '2022-01-21.0'
-#parms0_ = []
-#propagator = PropagateAssist
-#prop_args  = cf.all_forces 
+object_name = '6489'
+fit_epoch = '2021-01-21.0'
+parms0_ = []
+propagator = PropagateAssist
+prop_args  = forces, inv_rsq
 
 # (523599) 2003 RM 
 #object_name = '523599'
 #fit_epoch = '2023-09-13.0'
 #parms0_ = np.array([1e-11, 1e-11])
 #propagator = PropagateAssist
-#prop_args  = cf.all_forces
+#prop_args  = forces, inv_rsq
 
 # 1I/'Oumuamua 
-object_name = '1I'
-fit_epoch = '2017-12-01.0'
-parms0_ = np.array([1e-10]) 
-propagator = PropagateAssist
-prop_args  = cf.all_forces 
+#object_name = '1I'
+#fit_epoch = '2018-01-01.0'
+#parms0_ = np.array([1e-10])
+#propagator = PropagateAssist
+#prop_args  = forces, inv_rsq
 
 # C/1998 P1
 #object_name = 'C_1998_P1'
@@ -35,6 +40,8 @@ prop_args  = cf.all_forces
 #parms0_ = np.array([1e-10, 1e-10, 1e-10])
 #propagator = PropagateSciPy
 #prop_args = NonGravAccel
+#propagator = PropagateAssist
+#prop_args  = forces, ma73_h2o
 
 start_date = None
 end_date = None

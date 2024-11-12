@@ -249,24 +249,34 @@ def ResidualsAndPartials(Data, et0, x, propagator, prop_args):
 ### TRAJECTORY PROPAGATION ----------------------------------------------------
 # Two propagators are available, based on REBOUND/ASSIST and SciPy solve_ivp
 # FIRST OPTION: use ASSIST (faster, probably more accurate, but less flexible)
-def PropagateAssist(x, et0, et, RS, forces):
+def PropagateAssist(x, et0, et, RS, assist_params):
     ### iteration needed to account for light travel time:
     m = len(et)
     tau = np.zeros(m)
     for j in range(2):
-        y, P, S = RunAssist(x, et0, et, tau, forces)
+        y, P, S = RunAssist(x, et0, et, tau, assist_params)
         tau = np.array([np.linalg.norm(y[i,:3]-RS[i,:])/cf.CC for i in range(m)])
     return y, P, S
         
-def RunAssist(x, et0, et, tau, forces):
+def RunAssist(x, et0, et, tau, assist_params):
+    # unpack parameters:
+    forces, params_ng_radial = assist_params
     # set up REBOUND simulation with ASSIST extras
     def init_sim(t0, p0, ephem, params_ngforce):
         sim = rebound.Simulation()
         sim.add(p0)
         sim.t = t0
         extras = assist.Extras(sim, ephem)
-        extras.particle_params = params_ngforce
+        # forces to be included:
         extras.forces = forces
+        # NG acceleration components:
+        extras.particle_params = params_ngforce
+        # parameters of radial dependence of NG force:
+        extras.alpha = params_ng_radial['alpha']
+        extras.r0    = params_ng_radial['r0']
+        extras.nm    = params_ng_radial['m']
+        extras.nn    = params_ng_radial['n']
+        extras.nk    = params_ng_radial['k']
         return sim, extras
     t0 = et0
     t = et - tau
@@ -290,9 +300,9 @@ def RunAssist(x, et0, et, tau, forces):
     ### first integration with nominal values of p_
     for i, ti in enumerate(t):
         extras.integrate_or_interpolate(ti)
-        ref = ephem.get_particle("sun", ti)
-        y[i,0:3] = np.array(sim.particles[0].xyz) - np.array(ref.xyz)
-        y[i,3:6] = np.array(sim.particles[0].vxyz)
+        sun = ephem.get_particle("sun", ti)
+        y[i,0:3] = np.array(sim.particles[0].xyz) - np.array(sun.xyz)
+        y[i,3:6] = np.array(sim.particles[0].vxyz) - np.array(sun.vxyz)
     ### set up integration with varying p_ components, to evaluate the sensitivity matrix
     eps = 1e-6
     S = np.zeros((m,6,nparms))
@@ -304,9 +314,9 @@ def RunAssist(x, et0, et, tau, forces):
         sim, extras = init_sim(t0, p0, ephem, params_ngforce+delta_params_ngforce)         
         for i, ti in enumerate(t):
             extras.integrate_or_interpolate(ti)
-            ref = ephem.get_particle("sun", ti)
-            y1[0:3] = np.array(sim.particles[0].xyz) - np.array(ref.xyz)
-            y1[3:6] = np.array(sim.particles[0].vxyz)
+            sun = ephem.get_particle("sun", ti)
+            y1[0:3] = np.array(sim.particles[0].xyz) - np.array(sun.xyz)
+            y1[3:6] = np.array(sim.particles[0].vxyz) - np.array(sun.vxyz)
             for j in range(6):
                 S[i,j,k] = (y1[j] - y[i,j])/(delta_params_ngforce[k])
     ### evaluate state transition matrix using REBOUND variational particles
