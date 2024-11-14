@@ -43,10 +43,10 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
     OC = np.array([line[77:80] for line in obs_lines])
     # observing epoch parsed into SPICE's Ephemeris Time (~TDB)
     et = np.array([spice.str2et(line[15:25])+float(line[25:32])*cf.DAYS for line in obs_lines])
-    # observed right ascension
+    # observed right ascension (units: radians)
     ra = np.array([np.deg2rad(15.*float(line[32:34])+float(line[35:37])/4.
                    +float(line[38:44])/240.) for line in obs_lines])
-    # observed declination
+    # observed declination (units: radians)
     de = np.array([np.deg2rad( float(line[44]+'1') * (abs(float(line[45:47]))
                   +float(line[48:50])/60.+float(line[51:56])/3600.) ) for line in obs_lines])
     # uncertainties, including cos(delta) factor for RA; note the 2. arc sec placeholder
@@ -149,6 +149,7 @@ def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter):
     ### begin main loop of differential correction
     print('Differential correction begins.')
     print('#iter.     RMS       chi-square    ||dx||_M    ||dx||_2      #rec   #rej   #use frac')
+    RMS_hh = []
     for k in range(max_iter):
         # initialize normal equations and residuals
         BTWB = np.zeros((n, n))
@@ -167,27 +168,37 @@ def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter):
                 # accumulate normal equations
                 BTWB += (B.T @ W @ B)
                 BTWz += (B.T @ W @ z)
-                ress += (z @ W @ z)
+                ress += z @ z * (206265.)**2 # for RMS in arc sec
+                #ress += (z @ W @ z) # for RMS scaled to sigmas (actually cost func.)
                 # covariance of post-fit residual if epoch i was included
                 G = np.diag(sigma**2) - (B @ Cov @ B.T)
             else:
                 # covariance of post-fit residual if epoch i was _not_ included
                 G = np.diag(sigma**2) + (B @ Cov @ B.T)
             chi2[i] = z @ np.linalg.inv(G) @ z
-        ### solve normal eqns. and update initial state vector and its covariance
+        ## solve normal eqns. and update initial state vector and its covariance
         dx = np.linalg.solve(BTWB, BTWz)
         x = x + dx
         Cov = np.linalg.inv(BTWB)
-        # update RMS and norm of correction
+        ## quality of fit statistics
+        # RMS
         RMS = np.sqrt(ress/2./m_use)
+        # running mean of RMS over last 5 iterations
+        RMS_hh.append(RMS)
+        if len(RMS_hh) >= 5:
+            RMS_rm = np.mean(RMS_hh[-5:])
+        else:
+            RMS_rm = 1e10
+        # norm wrt normal matrix (see Milani & Gronchi 2010; cf. Mahalanobis dist.)
         nrm = np.sqrt((dx @ BTWB @ dx)/n)
+        # chi-square
         q = np.r_[zm[:,0], zm[:,1]]/np.r_[Data['sigma_RA'], Data['sigma_De']]
         chisq = np.sum(q[np.r_[flag, flag]]**2)
-        ### screen output
+        ## screen output
         print('%4i   %12.6e %12.6e %12.6e %12.6e %6i %6i %6i %4.2f' % (k, RMS, chisq, nrm,
                np.linalg.norm(dx), m_rec, m_rej, m_use, m_use/m))
         # check for convergence to end loop:
-        if (RMS < 0.5) | (nrm < 0.5) | (np.linalg.norm(dx) < 5e-8):
+        if (abs(RMS/RMS_rm-1.) < 1e-2) | (np.linalg.norm(dx) < 1e-10):
             break
         # >>> this section handles outliers rejection/recovery
         # adjust rejection threshld for this step:
