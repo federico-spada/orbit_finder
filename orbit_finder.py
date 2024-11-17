@@ -49,7 +49,7 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
     # observed declination (units: radians)
     de = np.array([np.deg2rad( float(line[44]+'1') * (abs(float(line[45:47]))
                   +float(line[48:50])/60.+float(line[51:56])/3600.) ) for line in obs_lines])
-    # uncertainties, including cos(delta) factor for RA; note the 2. arc sec placeholder
+    # uncertainties, including cos(delta) factor for RA; note 2 arc sec placeholder
     s_ra = np.deg2rad(2./3600.)*np.cos(de)
     s_de = np.repeat(np.deg2rad(2./3600.), len(de))
     # observer location, in heliocentric J2000 frame
@@ -104,7 +104,7 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
     RS = RS / cf.AU
     et = et / cf.DAYS
     ### return output as dictionary
-    Data = {'ET':et[mask], 'OC':OC[mask], 'RS':RS[mask], 'Cat':catc[mask], 'Obs.Epoch':dttm,
+    Data = {'ET':et[mask], 'OC':OC[mask], 'RS':RS[mask], 'Cat':catc[mask], 'Obs.Epoch':dttm[mask],
             'RA':ra[mask], 'De':de[mask], 'sigma_RA':s_ra[mask], 'sigma_De':s_de[mask]}
     return Data    
 
@@ -281,7 +281,7 @@ def RunAssist(x, et0, et, tau, assist_params):
         # forces to be included:
         extras.forces = forces
         # NG acceleration components:
-        extras.particle_params = params_ngforce
+        extras.particle_params = params_ngforce * 1e-8
         # parameters of radial dependence of NG force:
         extras.alpha = params_ng_radial['alpha']
         extras.r0    = params_ng_radial['r0']
@@ -388,53 +388,55 @@ def Derivs(t, y, parms_,aNG):
     v_ = y[3:6]
     r = np.linalg.norm(r_)
     v = np.linalg.norm(v_)
-    # main term
-    f_ = -cf.MU_S*r_/r**3
-    # perturbations
-    p_ = 0
-    # planets
+    ## >>> call non-gravitational acceleration function:
+    if not aNG:
+       aNG_, dadrNG, dadvNG, dadpNG = np.zeros(3), np.zeros((3,3)), np.zeros((3,3)), [] 
+       n_p = 0
+    else:
+       aNG_, dadrNG, dadvNG, dadpNG = aNG(r_, v_, parms_)
+       n_p = len(parms_) 
+    ## <<<
+    ### acceleration
+    a_ = -cf.MU_S*r_/r**3
+    # add planets
     for i, TAG in enumerate(cf.TAG_P):
         s_ = spice.spkpos(TAG, t*cf.DAYS, 'J2000', 'NONE', '10')[0]/cf.AU
-        p_ = p_ - cf.MU_P[i]*( (r_-s_)/np.linalg.norm(r_-s_)**3 + s_/np.linalg.norm(s_)**3 )
-    # asteroids
+        a_ += - cf.MU_P[i]*( (r_-s_)/np.linalg.norm(r_-s_)**3 + s_/np.linalg.norm(s_)**3 )
+    # add asteroids
     for i, TAG in enumerate(cf.TAG_A):
         s_ = spice.spkpos(TAG, t*cf.DAYS, 'J2000', 'NONE', '10')[0]/cf.AU
-        p_ = p_ - cf.MU_A[i]*( (r_-s_)/np.linalg.norm(r_-s_)**3 + s_/np.linalg.norm(s_)**3 )
-    # GR correction
-    p_ = p_ + (cf.MU_S/cf.CC**2/r**3)*( (4*cf.MU_S/r - v**2)*r_ + 4*np.dot(r_,v_)*v_ )
-    # non-gravitational term
-    if not aNG:
-       aNG_ = np.zeros(3)
-       dadp = np.array([])
-       n_p  = 0
-    else:
-       aNG_, dadp = aNG(r_, v_, parms_)
-       n_p = len(parms_)
-    p_ = p_ + aNG_
-    # total acceleration
-    a_ = f_ + p_
-    ### variational equations
+        a_ += - cf.MU_A[i]*( (r_-s_)/np.linalg.norm(r_-s_)**3 + s_/np.linalg.norm(s_)**3 )
+    # add GR correction
+    a_ += (cf.MU_S/cf.CC**2/r**3)*( (4*cf.MU_S/r - v**2)*r_ + 4*np.dot(r_,v_)*v_ )
+    # add non-gravitational term
+    a_ = a_ + aNG_
+    ### variational equations - note: asteroids, relativity omitted (GR would contribute to dadv)
+    # 1. state transition matrix variation:
     PHI = np.reshape(y[6:42], (6, 6))
-    # main term
-    F = -cf.MU_S/r**3*( np.eye(3) - 3*np.outer(r_, r_)/r**2)
-    # point mass perturbers (planets only!)
-    P = np.zeros((3,3))
+    ## dadr
+    dadr = -cf.MU_S/r**3*( np.eye(3) - 3*np.outer(r_, r_)/r**2)
+    # add planets
     for i, TAG in enumerate(cf.TAG_P):
         s_ = spice.spkpos(TAG, t*cf.DAYS, 'J2000', 'NONE', '10')[0]/cf.AU
-        P = P - cf.MU_P[i]/np.linalg.norm(r_-s_)**3 \
-          * ( np.eye(3) - 3*np.outer(r_-s_,r_-s_)/np.linalg.norm(r_-s_)**2 )
-    # asteroids, relativity, and radiation pressure are omitted in the variational eqns.
-    G = F + P
-    AP = np.block([[np.zeros((3, 3)), np.eye(3)], [G, np.zeros((3, 3))]]) @ PHI
-    # sensitivity matrix
+        dadr += - cf.MU_P[i]/np.linalg.norm(r_-s_)**3 \
+          * ( np.eye(3) - 3*np.outer(r_-s_, r_-s_)/np.linalg.norm(r_-s_)**2 )
+    # add NG term (set to zero above if not to be modeled)
+    dadr += dadrNG
+    ## dadv: the only contribution considered is from NG, if present (already zero otherwise)
+    dadv = dadvNG
+    ## dadp: the only contribution is from NG, if present
+    dadp = dadpNG
+    # variational equation matrix
+    A = np.block([[np.zeros((3, 3)), np.eye(3)], [dadr, dadv]])
+    dPHIdt = A @ PHI
+    # 2. sensitivity matrix variation:
     if n_p > 0:
         S = np.reshape(y[42:], (6, n_p))
-        AS = np.block([[np.zeros((3, 3)), np.eye(3)], [G, np.zeros((3, 3))]]) @ S \
-           + np.concatenate((np.zeros((3, n_p)),np.c_[dadp]))
+        dSdt = A @ S + np.r_[np.zeros((3, n_p)), dadp]
     else:
-        AS = np.array([])
+        dSdt = np.array([])
     ### full vector with derivatives 
-    dydt = np.concatenate([v_, a_, AP.flatten(), AS.flatten()])
+    dydt = np.r_[v_, a_, dPHIdt.flatten(), dSdt.flatten()]
     return dydt
 
 
@@ -507,13 +509,14 @@ def SummaryPlot(object_name, Data, Fit, scaled=True):
 
 def SummaryText(object_name, Data, Fit):
     n = len(Fit['x']) 
-    xs1 = ['x ', 'y ', 'z ', 'vx', 'vy', 'vz', 'A1', 'A2', 'A3']
-    xs2 = np.r_[np.repeat('(au)', 3), np.repeat('(au/d)', 3), np.repeat('(10^-8 au/d^2)', 3)]
+    xs1 = ['x ', 'y ', 'z ', 'vx', 'vy', 'vz', 'A1', 'A2', 'A3', 'DT']
+    xs2 = np.r_[np.repeat('(au)', 3), np.repeat('(au/d)', 3), np.repeat('(10^-8 au/d^2)', 3),
+    ['(days)']]
     ee1 = ['a', 'e', 'I', 'Ω', 'ω', 'M']
     ee2 = ['(au)', ' ', '(deg)', '(deg)', '(deg)', '(deg)']
     U = spice.pxform( 'J2000', 'ECLIPJ2000', Fit['ET0']*cf.DAYS )
     r_, v_ = U @ Fit['x'][0:3],   U @ Fit['x'][3:6]
-    OE = spice.oscltx(np.r_[r_, v_], Fit['ET0']*cf.DAYS, cf.MU_S)
+    OE = spice.oscltx(np.r_[r_, v_], Fit['ET0'], cf.MU_S)
     oe = np.r_[ OE[9], OE[1], np.rad2deg(OE[2:6]) ] 
     A = JacobianTBP(r_, v_, cf.MU_S)[1]
     Cov_oe = A @ Fit['Cov'][:6,:6] @ A.T
@@ -526,10 +529,11 @@ def SummaryText(object_name, Data, Fit):
         else:
             f.write('Object name: '+object_name+'\n')
         f.write('\n')
-        f.write('RMS = %8.3f\n' % Fit['RMS'])
-        f.write('χ^2 = %8.3f\n' % Fit['chi-square'])
+        f.write('RMS = %8.3f (arc sec)\n' % Fit['RMS'])
+        f.write('χ^2 = %8.2f\n' % Fit['chi-square'])
+        f.write('No. residuals = %5i \n' % (2*sum(Fit['flag'])) )
         f.write('\n')
-        f.write('# epochs = %4i \n' % sum(Fit['flag']))
+        f.write('# epochs = %5i \n' % sum(Fit['flag']))
         f.write('First epoch: '+spice.et2utc(Data['ET'][ 0]*cf.DAYS, 'C', 2)+'\n')
         f.write('Last  epoch: '+spice.et2utc(Data['ET'][-1]*cf.DAYS, 'C', 2)+'\n')
         f.write('\n')        
@@ -537,12 +541,7 @@ def SummaryText(object_name, Data, Fit):
         f.write('\n')
         f.write('State vector (J2000 heliocentric frame)\n')
         for i, x_i in enumerate(Fit['x']):
-            if i < 6:
-                scale = 1.
-            else:
-                scale = 1e8
-            f.write('%s = %15.9f ± %13.6e %s\n' % (xs1[i], x_i*scale, 
-                    np.sqrt(Fit['Cov'][i,i])*scale, xs2[i]))            
+            f.write('%s = %15.9f ± %13.6e %s\n' % (xs1[i], x_i, np.sqrt(Fit['Cov'][i,i]), xs2[i]))            
         f.write('\n')
         f.write('Orbital elements (ECLIPJ2000 heliocentric frame)\n')          
         for i in range(len(oe)):

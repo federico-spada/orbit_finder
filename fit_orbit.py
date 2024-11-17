@@ -23,21 +23,21 @@ prop_args  = forces, inv_rsq
 # (523599) 2003 RM 
 #object_name = '523599'
 #fit_epoch = '2023-09-13.0'
-#parms0_ = np.array([1e-11, 1e-11])
+#parms0_ = np.array([1e-3, 1e-3])
 #propagator = PropagateAssist
 #prop_args  = forces, inv_rsq
 
 # 1I/'Oumuamua 
 #object_name = '1I'
 #fit_epoch = '2018-01-01.0'
-#parms0_ = np.array([1e-10])
+#parms0_ = np.array([1e-2])
 #propagator = PropagateAssist
 #prop_args  = forces, inv_rsq
 
 # C/1998 P1
 #object_name = 'C_1998_P1'
 #fit_epoch = '1998-05-31'
-#parms0_ = np.array([1e-10, 1e-10, 1e-10])
+#parms0_ = np.array([1e-2, 1e-2, 1e-2])
 #propagator = PropagateSciPy
 #prop_args = NonGravAccel
 #propagator = PropagateAssist
