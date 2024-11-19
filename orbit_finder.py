@@ -178,7 +178,9 @@ def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter):
             chi2[i] = z @ np.linalg.inv(G) @ z
         ## solve normal eqns. and update initial state vector and its covariance
         dx = np.linalg.solve(BTWB, BTWz)
-        x = x + dx
+        # skip first iteration update (dx can be very large!)
+        if k > 1:
+            x = x + dx
         Cov = np.linalg.inv(BTWB)
         ## quality of fit statistics
         # RMS
@@ -281,7 +283,7 @@ def RunAssist(x, et0, et, tau, assist_params):
         # forces to be included:
         extras.forces = forces
         # NG acceleration components:
-        extras.particle_params = params_ngforce * 1e-8
+        extras.particle_params = params_ngforce
         # parameters of radial dependence of NG force:
         extras.alpha = params_ng_radial['alpha']
         extras.r0    = params_ng_radial['r0']
@@ -349,10 +351,12 @@ def RunAssist(x, et0, et, tau, assist_params):
 
 # SECOND OPTION: integrate the equations of motion with the SciPy ode solver
 # "solve_ivp"; slower option, but fully customizable equations (see "Derivs")
-def PropagateSciPy(x, et0, et, RS, aNG):
-    rtol = 1e-11
-    atol = 1e-13
-    method = SWAG
+def PropagateSciPy(x, et0, et, RS, scipy_params):
+    aNG, NGcoeff = scipy_params
+    rtol = 1e-9
+    atol = 1e-11
+    #method = SWAG
+    method = 'RK45'
     n = len(x)
     m = len(et)
     n_p = n-6  # number of parameters beyond initial state vector
@@ -361,11 +365,11 @@ def PropagateSciPy(x, et0, et, RS, aNG):
     y0 = np.concatenate([r0_, v0_, np.eye(6).flatten(), np.zeros((6,n_p)).flatten()])
     # forward integration from et0 to et[-1]
     tspan_f = [et0, et[-1]]
-    sol_f = solve_ivp(Derivs, tspan_f, y0, method=method, args=(parms_, aNG),
+    sol_f = solve_ivp(Derivs, tspan_f, y0, method=method, args=(parms_, aNG, NGcoeff),
             rtol=rtol, atol=atol, dense_output=True)
     # backward integration from et0 to et[0]
     tspan_b = [et0, et[0]]
-    sol_b = solve_ivp(Derivs, tspan_b, y0, method=method, args=(parms_, aNG),
+    sol_b = solve_ivp(Derivs, tspan_b, y0, method=method, args=(parms_, aNG, NGcoeff),
             rtol=rtol, atol=atol, dense_output=True)
     ii_f = np.where(et >  et0)[0]
     ii_b = np.where(et <= et0)[0]
@@ -383,7 +387,7 @@ def PropagateSciPy(x, et0, et, RS, aNG):
     return y, P, S
 
 # force model and linearization: see Montenbruck & Gill 2005, Chapters 3 and 7, resp.
-def Derivs(t, y, parms_,aNG):
+def Derivs(t, y, parms_, aNG, NGcoeff):
     r_ = y[0:3]
     v_ = y[3:6]
     r = np.linalg.norm(r_)
@@ -393,7 +397,7 @@ def Derivs(t, y, parms_,aNG):
        aNG_, dadrNG, dadvNG, dadpNG = np.zeros(3), np.zeros((3,3)), np.zeros((3,3)), [] 
        n_p = 0
     else:
-       aNG_, dadrNG, dadvNG, dadpNG = aNG(r_, v_, parms_)
+       aNG_, dadrNG, dadvNG, dadpNG = aNG(r_, v_, parms_, NGcoeff)
        n_p = len(parms_) 
     ## <<<
     ### acceleration
@@ -540,8 +544,13 @@ def SummaryText(object_name, Data, Fit):
         f.write('Fit Epoch  : '+spice.et2utc(Fit['ET0']*cf.DAYS, 'C', 2)+'\n')
         f.write('\n')
         f.write('State vector (J2000 heliocentric frame)\n')
-        for i, x_i in enumerate(Fit['x']):
-            f.write('%s = %15.9f ± %13.6e %s\n' % (xs1[i], x_i, np.sqrt(Fit['Cov'][i,i]), xs2[i]))            
+        for i in range(n):
+            x_i = Fit['x'][i]
+            sx_i = np.sqrt(Fit['Cov'][i,i])
+            if i in [6, 7, 8]:
+                x_i = x_i * 1e8
+                sx_i = sx_i * 1e8
+            f.write('%s = %15.9f ± %13.6e %s\n' % (xs1[i], x_i, sx_i, xs2[i]))
         f.write('\n')
         f.write('Orbital elements (ECLIPJ2000 heliocentric frame)\n')          
         for i in range(len(oe)):
