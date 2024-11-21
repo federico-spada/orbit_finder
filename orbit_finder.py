@@ -134,6 +134,19 @@ def DebiasData(bias_file, Data):
 ### DIFFERENTIAL CORRECTION OF THE ORBIT --------------------------------------
 # References: Farnocchia et al. (2015); Carpino et al. (2003)
 def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter):
+    # >>> use SVD for normal equations and covariance calculation
+    def solve_svd(N, d, tolerance=1e-12): 
+        U, Sigma, _ = np.linalg.svd(N, hermitian=True)
+        y = np.zeros_like(d)
+        SigmaInv = np.zeros_like(Sigma)
+        for i, sigma in enumerate(Sigma):
+            if sigma > tolerance:
+                y[i] = (U.T @ d)[i] / sigma
+                SigmaInv[i] = 1. / sigma
+        x = U @ y
+        Cov = U @ np.diag(SigmaInv) @ U.T
+        return x, Cov
+    # <<<
     # parameters
     chi2_rec = 7.  # recovery threshold
     chi2_rej0 = 8.  # base rejection threshold
@@ -176,12 +189,10 @@ def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter):
                 # covariance of post-fit residual if epoch i was _not_ included
                 G = np.diag(sigma**2) + (B @ Cov @ B.T)
             chi2[i] = z @ np.linalg.inv(G) @ z
-        ## solve normal eqns. and update initial state vector and its covariance
-        dx = np.linalg.solve(BTWB, BTWz)
-        # skip first iteration update (dx can be very large!)
-        if k > 1:
-            x = x + dx
-        Cov = np.linalg.inv(BTWB)
+        ## solve normal equations using SVD decomposition of normal matrix
+        dx, Cov = solve_svd(BTWB, BTWz)
+        # update parameters vector
+        x = x + dx
         ## quality of fit statistics
         # RMS
         RMS = np.sqrt(ress/2./m_use)
