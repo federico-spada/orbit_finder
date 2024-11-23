@@ -192,7 +192,7 @@ def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter):
         ## solve normal equations using SVD decomposition of normal matrix
         dx, Cov = solve_svd(BTWB, BTWz)
         # update parameters vector
-        x = x + dx
+        x = x - dx
         ## quality of fit statistics
         # RMS
         RMS = np.sqrt(ress/2./m_use)
@@ -264,8 +264,8 @@ def ResidualsAndPartials(Data, et0, x, propagator, prop_args):
         # vector of residuals z
         z[i,:] = np.dot(dL_, A_), np.dot(dL_, D_)
         # design matrix ∂z/∂x
-        B[i,:,:] = np.c_[ np.r_[ A_, np.zeros(3) ]/rho @ np.block([Pi, Si]),
-                          np.r_[ D_, np.zeros(3) ]/rho @ np.block([Pi, Si]) ].T
+        B[i,:,:] = -np.c_[ np.r_[ A_, np.zeros(3) ]/rho @ np.block([Pi, Si]),
+                           np.r_[ D_, np.zeros(3) ]/rho @ np.block([Pi, Si]) ].T
     return z, B, y
 
 
