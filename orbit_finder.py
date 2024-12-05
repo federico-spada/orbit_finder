@@ -15,7 +15,7 @@ import config as cf
 
 ### LOAD DATA -----------------------------------------------------------------
 def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
-    # load geodata of observing stations
+    ### load geodata of observing stations
     with open(obsstat_file, 'r') as file:
         file.readline() # skip header
         lines = [line.strip() for line in file.readlines() \
@@ -24,89 +24,97 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
     lons = np.array([float(line[3:13]) for line in lines])
     rcos = np.array([float(line[13:21])*cf.RE for line in lines])
     rsin = np.array([float(line[21:30])*cf.RE for line in lines])
-    # load observational data, parsing an input file in MPC format
+    ### parse data from input file in MPC format
+    # read MPC file
     with open(objdata_file, 'r') as file:
         lines = file.readlines()
-    # standard observing stations lines
-    obs_lines = [line for line in lines if line[34] == ' ']
-    # store astrometric catalog code, for debiasing:
-    catc = np.array([line[71] for line in lines])
-    # space telescopes lines
-    spt_raw = [line for line in lines if line[14] in ['s', 'S']]
-    spt_lines = [spt_raw[i]+spt_raw[i+1] for i in range(0, len(spt_raw)-1, 2)]
-    space_tel_codes = np.unique([line[77:80] for line in spt_lines]).tolist()
-    # roving observer lines
-    rvg_raw = [line for line in lines if line[14] in ['v', 'V']]
-    rvg_lines = [rvg_raw[i]+rvg_raw[i+1] for i in range(0, len(rvg_raw)-1, 2)]
-    rovng_obs_codes = np.unique([line[77:80] for line in rvg_lines]).tolist()
-    # observing station code
-    OC = np.array([line[77:80] for line in obs_lines])
-    # observing epoch parsed into SPICE's Ephemeris Time (~TDB)
-    et = np.array([spice.str2et(line[15:25])+float(line[25:32])*cf.DAYS for line in obs_lines])
-    # observed right ascension (units: radians)
-    ra = np.array([np.deg2rad(15.*float(line[32:34])+float(line[35:37])/4.
-                   +float(line[38:44])/240.) for line in obs_lines])
-    # observed declination (units: radians)
-    de = np.array([np.deg2rad( float(line[44]+'1') * (abs(float(line[45:47]))
-                  +float(line[48:50])/60.+float(line[51:56])/3600.) ) for line in obs_lines])
-    # uncertainties, including cos(delta) factor for RA; note 2 arc sec placeholder
-    s_ra = np.deg2rad(2./3600.)*np.cos(de)
-    s_de = np.repeat(np.deg2rad(2./3600.), len(de))
-    # observer location, in heliocentric J2000 frame
-    RS = np.zeros((len(OC), 3))
-    for k, code in enumerate(OC):
-        if code in space_tel_codes:
-            # space telescopes entries
-            line1 = [line for line in spt_lines if (line[15:32] == obs_lines[k][15:32])][0]
-            xyz = line1[114:].split()
-            RS[k,:] = float(xyz[0]+xyz[1]), float(xyz[2]+xyz[3]), float(xyz[4]+xyz[5])
-        elif code in rovng_obs_codes:
-            # roving observers entries
-            line1 = [line for line in rvg_lines if (line[15:32] == obs_lines[k][15:32])][0]
-            lon, lat, alt = [float(x) for x in line1[114:].split()[:3]]
+    # parse lines
+    Nmax = len(lines) 
+    et, ra, de = np.empty((3, Nmax))
+    RS = np.empty((Nmax, 3))
+    prg_code, obs_type, cat_code = np.empty((3, Nmax), dtype='U1')
+    obs_code = np.empty(Nmax, dtype='U3')
+    count = 0
+    j = 0
+    while count < len(lines):
+        line = lines[count]        
+        # program code
+        prg_code[j] = line[13]
+        # observation type
+        obs_type[j] = line[14]
+        # observing epoch parsed into SPICE's Ephemeris Time (~TDB)
+        et[j] = spice.str2et(line[15:25]) + float(line[25:32]) * cf.DAYS
+        # right ascension (converted to radians)
+        ra[j] = np.deg2rad(15. * float(line[32:34]) + float(line[35:37]) / 4.
+                                                    + float(line[38:44]) / 240.)
+        # declination (converted to radians)
+        de[j] = np.deg2rad(float(line[44]+'1') * (abs(float(line[45:47]))
+                                                    + float(line[48:50]) / 60.
+                                                    + float(line[51:56]) / 3600.))
+        # astrometric catalog code:
+        cat_code[j] = line[71]
+        # observing station code
+        obs_code[j] = line[77:80]
+        # heliocentric position of obs. station (converted from ECEF to ECI, and from geoc. to helioc.)
+        rE = spice.spkpos('399', et[j], 'J2000', 'NONE', '10')[0]
+        if obs_type[j] in ['s', 'S']:
+            # space telescopes observations: second line contains J2000 position of telescope
+            next_line = lines[count+1]
+            xyz = next_line[34:].split()
+            RS[j] = np.r_[float(xyz[0]+xyz[1]), float(xyz[2]+xyz[3]), float(xyz[4]+xyz[5])] + rE
+            increment = 2
+        elif obs_type[j] in ['v', 'V']:
+            # roving observer: second lind contains geodata of observing location
+            next_line = lines[count+1]
+            lon, lat, alt = [float(x) for x in next_line[34:].split()[:3]]
             R0 = spice.georec(np.radians(lon), np.radians(lat), alt/1e3, cf.RE, cf.FE)
-            U = spice.pxform( 'ITRF93', 'J2000', et[k] )
-            RS[k,:] = U @ R0
+            U = spice.pxform( 'ITRF93', 'J2000', et[j] )
+            RS[j] = U @ R0 + rE
+            increment = 2
         else:
-            # standard entries
-            io = np.where(obss == code)[0]
-            R0 = spice.cylrec(rcos[io], np.deg2rad(lons[io]), rsin[io])
-            U = spice.pxform( 'ITRF93', 'J2000', et[k] )
-            RS[k,:] = U @ R0
-    # convert to heliocentric 
-    RS = RS + spice.spkpos('399', et, 'J2000', 'NONE', '10')[0]
-    # replace default uncertainties with those from Veres et al. 2017, if available
-    for key in cf.uncertainty:
-        ii = np.where(OC == key)[0]
-        s_ra[ii] = np.deg2rad(cf.uncertainty[key]/3600.)*np.cos(de[ii])
-        s_de[ii] = np.deg2rad(cf.uncertainty[key]/3600.)
-    # >>> (optional) restrict epochs to the range between start_date and end_date
+            # "standard case": look up geodata in MPC list
+            indx_obs = np.where(obss == obs_code[j])[0]
+            R0 = spice.cylrec(rcos[indx_obs], np.deg2rad(lons[indx_obs]), rsin[indx_obs])
+            U = spice.pxform( 'ITRF93', 'J2000', et[j] )
+            RS[j] = U @ R0 + rE
+            increment = 1
+        count += increment
+        j += 1
+    # trim to actual size
+    et = et[:j]; ra = ra[:j]; de = de[:j]; RS = RS[:j,:]; prg_code = prg_code[:j]
+    obs_type = obs_type[:j]; cat_code = cat_code[:j]; obs_code = obs_code[:j]
+    # add sigmas all equal to a default value (e.g., 2 arc sec)
+    sigma_ra = np.repeat(np.deg2rad(2/3600), j) * np.cos(de)
+    sigma_de = np.repeat(np.deg2rad(2/3600), j)
+    print('Parsed observations at %5i epochs' % j)
+    # optional: use only observations within given time frame [start_date, end_date]
     if not start_date:
-        start_date = spice.et2utc(et[0],'ISOC',0)
+        start_date = spice.et2utc(et[0], 'ISOC', 7)
         i_start = 0
     else:
         et_start = spice.str2et(start_date)
         i_start = np.where(et >= et_start)[0][0]
     if not end_date:
-        end_date = spice.et2utc(et[-1],'ISOC',0)
+        end_date = spice.et2utc(et[-1], 'ISOC', 7)
         i_end = len(et)
     else:
         et_end = spice.str2et(end_date)
         i_end = np.where(et <= et_end)[0][-1]
-    print('Using data between', start_date, ' and', end_date,
-          '; range:', i_start, '-' ,i_end)
-    # all epochs outside this range will be dropped:
+    print('Using data between', start_date, ' and', end_date, '; range:', i_start, '-' ,i_end)
+    # observations at epochs outside this range will be dropped:
     mask = range(i_start, i_end)
     # <<<
     # save epochs as datetime objects for later use
-    dttm = np.array([datetime.fromisoformat(spice.et2utc(eti, 'ISOC', 7)) for eti in et])
+    obs_epoch = np.array([datetime.fromisoformat(spice.et2utc(eti, 'ISOC', 7)) for eti in et])
     # change units to AU, days 
     RS = RS / cf.AU
     et = et / cf.DAYS
     ### return output as dictionary
-    Data = {'ET':et[mask], 'OC':OC[mask], 'RS':RS[mask], 'Cat':catc[mask], 'Obs.Epoch':dttm[mask],
-            'RA':ra[mask], 'De':de[mask], 'sigma_RA':s_ra[mask], 'sigma_De':s_de[mask]}
-    return Data    
+    Data = {'ET':et[mask], 'RA':ra[mask], 'De':de[mask], 'RS':RS[mask],
+            'sigma_RA':sigma_ra[mask], 'sigma_De':sigma_de[mask],
+            'Obs.Epoch':obs_epoch[mask], 'Prg.Code':prg_code[mask], 'Obs.Type':obs_type[mask],
+            'Catalog':cat_code[mask], 'Obs.Code':obs_code[mask]}
+    return Data
 
 # Debiasing: Eggl et al. (2020)
 def DebiasData(bias_file, Data):
@@ -116,7 +124,7 @@ def DebiasData(bias_file, Data):
     hp = HEALPix(nside=nside)
     catalogs = lines[4][1:].strip().split()
     bias = np.loadtxt(bias_file, skiprows=23)
-    cid = [catalogs.index(cc) if cc in catalogs else -1 for cc in Data['Cat']]
+    cid = [catalogs.index(cc) if cc in catalogs else -1 for cc in Data['Catalog']]
     pid = [hp.lonlat_to_healpix(ra * u.rad, de * u.rad) for ra, de in zip( Data['RA'], Data['De'])]
     dRA, dDE, pmRA, pmDE = np.array( [bias[pid[i], 4*cid[i]:4*cid[i]+4] if cid[i] != -1
                                   else [0, 0, 0, 0] for i in range(len(Data['ET']))] ).T
@@ -129,6 +137,85 @@ def DebiasData(bias_file, Data):
     Data['De'] = Data['De'] - np.deg2rad(delta_de/3600.)
     return Data
 
+# Weighting scheme: Vereš et al. (2017)
+def AssignUncertainties(Data, default_sigma = 2.0):
+    # The following observation types are not explicitly addressed in  Vereš et al. (2017),
+    #    and will be assigned the global default value: 
+    other_types = ['B', 'V/v', 'R/r', 'c', 'D', 'Z', 'W/w', 'Q/q', 'T/t']
+    i_other_types = np.isin(Data['Obs.Type'], other_types)
+    if np.any(Data['Obs.Type'][i_other_types]):
+        print('Warning: observation types not included in weighting scheme detected:')
+        print(np.unique(Data['Obs.Type'][i_other_types]))
+        print('Default sigma = %5.2f arc sec will be used.' % default_sigma)
+    # initialization with _global_ default value:
+    sigma = np.repeat(default_sigma, len(Data['ET']))
+    ### CCD observations
+    # "other" CCD obs., w/ and w/o catalog info, cf. Table 3:
+    i_CCD = (Data['Obs.Type'] == 'C')
+    sigma[i_CCD] = np.where(Data['Catalog'][i_CCD] != ' ', 1.0, 1.5)
+    # Table 2
+    i_703 = (Data['Obs.Code'] == '703') # Catalina
+    sigma[i_703] = np.where(Data['ET'][i_703]*cf.DAYS < spice.str2et('2014-01-01'), 1.0, 0.8)
+    i_691 = (Data['Obs.Code'] == '691') # Spacewatch
+    sigma[i_691] = np.where(Data['ET'][i_691]*cf.DAYS < spice.str2et('2003-01-01'), 0.6, 0.5)
+    i_644 = (Data['Obs.Code'] == '644') # NEAT
+    sigma[i_644] = np.where(Data['ET'][i_644]*cf.DAYS < spice.str2et('2003-09-01'), 0.6, 0.4)
+    # Table 3 (except for "other", see above), and Table 4 (except for G83, Y28, 568, T09, T12, 
+    # T14, 309; see below)
+    Tables_3_4 = {'704': 1.0 , 'G96': 0.5 , 'F51': 0.2 , 'G45': 0.6 , '699': 0.8 ,
+                  'D29': 0.75, 'C51': 1.0 , 'E12': 0.75, '608': 0.6 , 'J75': 1.0 ,
+                  '645': 0.3 , '673': 0.3 , '689': 0.5 , '950': 0.5 , 'H01': 0.3 ,
+                  'J04': 0.4 , 'K92': 0.4 , 'K93': 0.4 , 'Q63': 0.4 ,
+                  'Q64': 0.4 , 'V37': 0.4 , 'W84': 0.5 , 'W85': 0.4 , 'W86': 0.4 ,
+                  'W87': 0.4 , 'K91': 0.4 , 'E10': 0.4 , 'F65': 0.4}
+    for ocode, value in Tables_3_4.items():
+        sigma[Data['Obs.Code'] == ocode] = value
+    # Table 4, special cases
+    gaia = ['U', 'V', 'W', 'X', '3', '6']
+    ## convenience function 
+    def apply_sigma_based_on_catalog(data, sigma, obs_codes, catalogs, prg_code=None, value=None):
+        condition = np.isin(data['Obs.Code'], obs_codes) & np.isin(data['Catalog'], catalogs)
+        if prg_code:
+            condition &= (data['Prg.Code'] == prg_code)
+        sigma[condition] = value
+    ##
+    # G83
+    apply_sigma_based_on_catalog(Data, sigma, 'G83', ['q', 't'], prg_code='2', value=0.3)
+    apply_sigma_based_on_catalog(Data, sigma, 'G83', gaia      , prg_code='2', value=0.2)
+    # Y28
+    apply_sigma_based_on_catalog(Data, sigma, 'Y28', gaia + ['t'], value=0.3)
+    # 568
+    apply_sigma_based_on_catalog(Data, sigma, '568', ['o', 's'], value=0.5)
+    apply_sigma_based_on_catalog(Data, sigma, '568', gaia      , value=0.1)
+    apply_sigma_based_on_catalog(Data, sigma, '568', ['t']     , value=0.2)
+    # T09, T12, T14
+    apply_sigma_based_on_catalog(Data, sigma, ['T09', 'T12', 'T14'], gaia, value=0.1)
+    # 309
+    apply_sigma_based_on_catalog(Data, sigma, '309', ['q', 't'], prg_code='&', value=0.3)
+    apply_sigma_based_on_catalog(Data, sigma, '309', gaia      , prg_code='&', value=0.2)
+    ### space telescopes
+    sigma[np.isin(Data['Obs.Type'], ['s', 'S'])] = 1.5
+    # HST
+    sigma[Data['Obs.Code'] == '250'] = 0.05
+    # Wise
+    sigma[Data['Obs.Code'] == 'C51'] = 1.0
+    ### Photographic
+    i_photo = np.where(np.isin(Data['Obs.Type'], ['P', ' ', 'A', 'N']))[0]
+    for i in i_photo:
+        if Data['ET'][i]*cf.DAYS < spice.str2et('1890-01-01'):
+            sigma[i] = 10.0
+        elif Data['ET'][i]*cf.DAYS < spice.str2et('1950-01-01'):
+            sigma[i] = 5.0
+        else:
+            sigma[i] = 2.5
+    ### Other types (Table 5)
+    Table5 = {'E': 0.2, 'H': 0.2, 'T': 0.5, 'e': 0.75, 'M': 2.0, 'n': 1.0}
+    for otype, value in Table5.items():
+        sigma[Data['Obs.Type'] == otype] = value
+    ### assign uncertainties
+    Data['sigma_RA'] = np.cos(Data['De']) * np.deg2rad(sigma/3600.)
+    Data['sigma_De'] = np.deg2rad(sigma/3600.)
+    return Data
 
 
 ### DIFFERENTIAL CORRECTION OF THE ORBIT --------------------------------------
@@ -211,7 +298,7 @@ def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter):
         print('%4i   %12.6e %12.6e %12.6e %12.6e %6i %6i %6i %4.2f' % (k, RMS, chisq, nrm,
                np.linalg.norm(dx), m_rec, m_rej, m_use, m_use/m))
         # check for convergence to end loop:
-        if (abs(RMS/RMS_rm-1.) < 1e-2) | (np.linalg.norm(dx) < 1e-10):
+        if (abs(RMS/RMS_rm-1.) < 1e-4) | (nrm < 1e-3) | (np.linalg.norm(dx) < 1e-10):
             break
         # >>> this section handles outliers rejection/recovery
         # adjust rejection threshld for this step:
@@ -628,17 +715,18 @@ def JacobianTBP(r_, v_, mu):
 
 
 ### PRELIMINARY ORBIT DETERMINATION -------------------------------------------
-def InitOrbDet(et, ra, de, s_ra, s_de, RS, i1, i2, i3):
-    taui = et[i1]-et[i2], et[i3]-et[i2], et[i3]-et[i1]
-    Ri_ = RS[i1,:], RS[i2,:], RS[i3,:]
-    e1_ = spice.radrec(1.,ra[i1],de[i1])
-    e2_ = spice.radrec(1.,ra[i2],de[i2])
-    e3_ = spice.radrec(1.,ra[i3],de[i3])
+def InitOrbDet(Data, i1, i2, i3):
+    tau1 = Data['ET'][i1]-Data['ET'][i2]
+    tau3 = Data['ET'][i3]-Data['ET'][i2]
+    Ri_ = Data['RS'][i1,:], Data['RS'][i2,:], Data['RS'][i3,:]
+    e1_ = spice.radrec(1., Data['RA'][i1], Data['De'][i1])
+    e2_ = spice.radrec(1., Data['RA'][i2], Data['De'][i2])
+    e3_ = spice.radrec(1., Data['RA'][i3], Data['De'][i3])
     ei_ = e1_, e2_, e3_
     r2i = 3.0
     kmax = 50
     tol = 1e-6
-    r2_, v2_, k = AnglesOnlyIOD(taui,Ri_,ei_,mu_s,r2i,kmax,tol)
+    r2_, v2_, k = AnglesOnlyIOD(tau1, tau3, Ri_, ei_, cf.MU_S, r2i, kmax, tol)
     if k < kmax-1:
        print('Preliminary orbit determination converged in %i iterations' % k)
        exit_code = 0
@@ -649,8 +737,38 @@ def InitOrbDet(et, ra, de, s_ra, s_de, RS, i1, i2, i3):
 
 
 # Reference: Bate, Mueller, White (1971), Section 5.8, page 271
-def AnglesOnlyIOD(taui, Ri_, Li_, mu_s, r2i, kmax, tol):
-    tau1, tau3, _ = taui
+def AnglesOnlyIOD(tau1, tau3, Ri_, Li_, mu_s, r2i, kmax, tol):
+    ###
+    def f_and_g(r0_, v0_, dt, mu):
+        r0 = np.linalg.norm(r0_)
+        v0 = np.linalg.norm(v0_)
+        sigma = np.dot(r0_, v0_)/np.sqrt(mu)
+        alpha = 2./r0 - v0**2/mu
+        # initial guess for universal anomaly x
+        x = np.sqrt(mu) * np.abs(alpha) * dt
+        for k in range(50):
+           z = alpha * x * x
+           # evaluate Stumpff functions C, S
+           if z > 0:
+               C = (1. - np.cos(np.sqrt(z)))/z
+               S = (np.sqrt(z) - np.sin(np.sqrt(z)))/np.sqrt(z)**3
+           elif z < 0:
+               C = (np.cosh(np.sqrt(-z)) - 1.)/(-z)
+               S = (np.sinh(np.sqrt(-z)) - np.sqrt(-z))/np.sqrt(-z)**3
+           else:
+               C = 1./2.
+               S = 1./6.
+           # Newton iteration for x  
+           F    = x * x * x * S + sigma * x * x * C    + r0 * x * (1-z*S) - np.sqrt(mu)*dt
+           dFdx = x * x * C     + sigma * x * (1.-z*S) + r0 * (1-z*C)
+           dx   = - F / dFdx
+           x = x + dx
+           if abs(dx) < 1e-10:
+               break
+        f = 1  - x * x * C / r0
+        g = dt - x * x * x * S / np.sqrt(mu)
+        return f, g
+    ###
     R1_, R2_, R3_ = Ri_
     L1_, L2_, L3_ = Li_
     r2 = r2i
@@ -680,12 +798,14 @@ def AnglesOnlyIOD(taui, Ri_, Li_, mu_s, r2i, kmax, tol):
         u2 = mu_s/r2**3
         p2 = np.dot(r2_,v2_)/r2**2
         q2 = np.dot(v2_,v2_)/r2**2 - u2
-        f1 = 1 - u2*tau1**2/2 + u2*p2*tau1**3/2 + u2*(u2 - 15*p2**2 + 3*q2)*tau1**4/24 \
-               + u2*p2*(7*p2**2 - u2 - 3*q2)*tau1**5/8
-        g1 = tau1 - u2*tau1**3/6 + u2*p2*tau1**4/4 + u2*(u2 - 45*p2**2 + 9*q2)*tau1**5/120
-        f3 = 1 - u2*tau3**2/2 + u2*p2*tau3**3/2 + u2*(u2 - 15*p2**2 + 3*q2)*tau3**4/24 \
-               + u2*p2*(7*p2**2 - u2 - 3*q2)*tau3**5/8
-        g3 = tau3 - u2*tau3**3/6 + u2*p2*tau3**4/4 + u2*(u2 - 45*p2**2 + 9*q2)*tau3**5/120
+        #f1 = 1 - u2*tau1**2/2 + u2*p2*tau1**3/2 + u2*(u2 - 15*p2**2 + 3*q2)*tau1**4/24 \
+        #       + u2*p2*(7*p2**2 - u2 - 3*q2)*tau1**5/8
+        #g1 = tau1 - u2*tau1**3/6 + u2*p2*tau1**4/4 + u2*(u2 - 45*p2**2 + 9*q2)*tau1**5/120
+        #f3 = 1 - u2*tau3**2/2 + u2*p2*tau3**3/2 + u2*(u2 - 15*p2**2 + 3*q2)*tau3**4/24 \
+        #       + u2*p2*(7*p2**2 - u2 - 3*q2)*tau3**5/8
+        #g3 = tau3 - u2*tau3**3/6 + u2*p2*tau3**4/4 + u2*(u2 - 45*p2**2 + 9*q2)*tau3**5/120
+        f1, g1 = f_and_g(r2_, v2_, tau1, mu_s)
+        f3, g3 = f_and_g(r2_, v2_, tau3, mu_s) 
         delta = (r2-r20)/r20
         #print(('%4i'+6*'%14.6e') % (k, r2, f1, f3, g1, g3, delta))
         if abs(delta) < tol:

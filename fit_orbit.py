@@ -59,6 +59,8 @@ max_iter = 25
 fbias = 'bias.dat'
 Data = DebiasData(fbias, Data)
 
+Data = AssignUncertainties(Data)
+
 ### Orbit fit initialization
 if '_' in object_name:
     target = object_name.split('_')[-2] + ' ' + object_name.split('_')[-1]
