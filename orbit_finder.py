@@ -141,10 +141,10 @@ def DebiasData(bias_file, Data):
 def AssignUncertainties(Data, default_sigma = 2.0):
     # The following observation types are not explicitly addressed in  Vereš et al. (2017),
     #    and will be assigned the global default value: 
-    other_types = ['B', 'V/v', 'R/r', 'c', 'D', 'Z', 'W/w', 'Q/q', 'T/t']
+    other_types = ['V/v', 'R/r', 'c', 'D', 'Z', 'W/w', 'Q/q', 'T/t']
     i_other_types = np.isin(Data['Obs.Type'], other_types)
     if np.any(Data['Obs.Type'][i_other_types]):
-        print('Warning: observation types not included in weighting scheme detected:')
+        print('Warning: found some observation types which are not included in weighting scheme:')
         print(np.unique(Data['Obs.Type'][i_other_types]))
         print('Default sigma = %5.2f arc sec will be used.' % default_sigma)
     # initialization with _global_ default value:
@@ -153,6 +153,9 @@ def AssignUncertainties(Data, default_sigma = 2.0):
     # "other" CCD obs., w/ and w/o catalog info, cf. Table 3:
     i_CCD = (Data['Obs.Type'] == 'C')
     sigma[i_CCD] = np.where(Data['Catalog'][i_CCD] != ' ', 1.0, 1.5)
+    # process CMOS (obs. type "B") the same way as generic CCD
+    i_CMOS = (Data['Obs.Type'] == 'B')
+    sigma[i_CMOS] = np.where(Data['Catalog'][i_CMOS] != ' ', 1.0, 1.5)
     # Table 2
     i_703 = (Data['Obs.Code'] == '703') # Catalina
     sigma[i_703] = np.where(Data['ET'][i_703]*cf.DAYS < spice.str2et('2014-01-01'), 1.0, 0.8)
