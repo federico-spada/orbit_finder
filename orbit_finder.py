@@ -363,11 +363,11 @@ def ResidualsAndPartials(Data, et0, x, propagator, prop_args):
 ### TRAJECTORY PROPAGATION ----------------------------------------------------
 # Two propagators are available, based on REBOUND/ASSIST and SciPy solve_ivp
 # FIRST OPTION: use ASSIST (faster, probably more accurate, but less flexible)
-def PropagateAssist(x, et0, et, RS, assist_params):
+def PropagateAssist(x, et0, et, RS, assist_params, n_tau_iter=2):
     ### iteration needed to account for light travel time:
     m = len(et)
     tau = np.zeros(m)
-    for j in range(2):
+    for j in range(n_tau_iter):
         y, P, S = RunAssist(x, et0, et, tau, assist_params)
         tau = np.array([np.linalg.norm(y[i,:3]-RS[i,:])/cf.CC for i in range(m)])
     return y, P, S
@@ -452,7 +452,7 @@ def RunAssist(x, et0, et, tau, assist_params):
 
 # SECOND OPTION: integrate the equations of motion with the SciPy ode solver
 # "solve_ivp"; slower option, but fully customizable equations (see "Derivs")
-def PropagateSciPy(x, et0, et, RS, scipy_params):
+def PropagateSciPy(x, et0, et, RS, scipy_params, n_tau_iter=2):
     aNG, NGcoeff = scipy_params
     rtol = 1e-9
     atol = 1e-11
@@ -476,7 +476,7 @@ def PropagateSciPy(x, et0, et, RS, scipy_params):
     ii_b = np.where(et <= et0)[0]
     ### iteration needed to account for light travel time:
     tau = np.zeros(m)
-    for j in range(2):
+    for j in range(n_tau_iter):
         teval_b = et[ii_b]-tau[ii_b]
         teval_f = et[ii_f]-tau[ii_f]
         sol = np.array([sol_b.sol(tb).T for tb in teval_b] + [sol_f.sol(tf).T for tf in teval_f]) 
