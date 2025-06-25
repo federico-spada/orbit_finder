@@ -60,8 +60,11 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
         if obs_type[j] in ['s', 'S']:
             # space telescopes observations: second line contains J2000 position of telescope
             next_line = lines[count+1]
-            xyz = next_line[34:].split()
-            RS[j] = np.r_[float(xyz[0]+xyz[1]), float(xyz[2]+xyz[3]), float(xyz[4]+xyz[5])] + rE
+            #xyz = next_line[34:].split()
+            #RS[j] = np.r_[float(xyz[0]+xyz[1]), float(xyz[2]+xyz[3]), float(xyz[4]+xyz[5])] + rE
+            xyz = next_line[33:45], next_line[45:57], next_line[57:70]
+            xyz_clean = tuple(float(x.replace(' ', '')) for x in xyz)
+            RS[j] = np.array(xyz_clean) + rE
             increment = 2
         elif obs_type[j] in ['v', 'V']:
             # roving observer: second lind contains geodata of observing location
@@ -202,6 +205,8 @@ def AssignUncertainties(Data, default_sigma = 2.0):
     sigma[Data['Obs.Code'] == '250'] = 0.05
     # Wise
     sigma[Data['Obs.Code'] == 'C51'] = 1.0
+    # JWST
+    sigma[Data['Obs.Code'] == '274'] = 0.05
     ### Photographic
     i_photo = np.where(np.isin(Data['Obs.Type'], ['P', ' ', 'A', 'N']))[0]
     for i in i_photo:
