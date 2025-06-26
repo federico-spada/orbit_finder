@@ -38,5 +38,7 @@ assist_planets_file = '/Users/fs255/rebound_assist/data/linux_m13000p17000.441'
 assist_asteroids_file = '/Users/fs255/rebound_assist/data/sb441-n16.bsp'
 
 
-
-
+### default locations of other input files
+mpco_file = '/Users/fs255/science/orbit_finder/mpc_obs.txt'
+bias_file = '/Users/fs255/science/orbit_finder/bias.dat'
+spmk_file = '/Users/fs255/science/orbit_finder/spice.mkn'

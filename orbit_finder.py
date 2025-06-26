@@ -14,9 +14,9 @@ import config as cf
 
 
 ### LOAD DATA -----------------------------------------------------------------
-def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
+def LoadDataMPC(data_file, mpco_file=cf.mpco_file, start_date=None, end_date=None):
     ### load geodata of observing stations
-    with open(obsstat_file, 'r') as file:
+    with open(mpco_file, 'r') as file:
         file.readline() # skip header
         lines = [line.strip() for line in file.readlines() \
                  if (line.strip()[3:12] != '         ')]
@@ -26,7 +26,7 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
     rsin = np.array([float(line[21:30])*cf.RE for line in lines])
     ### parse data from input file in MPC format
     # read MPC file
-    with open(objdata_file, 'r') as file:
+    with open(data_file, 'r') as file:
         lines = file.readlines()
     # parse lines
     Nmax = len(lines) 
@@ -120,7 +120,7 @@ def LoadDataMPC(obsstat_file, objdata_file, start_date=None, end_date=None):
     return Data
 
 # Debiasing: Eggl et al. (2020)
-def DebiasData(bias_file, Data):
+def DebiasData(Data, bias_file=cf.bias_file):
     with open(bias_file, 'r') as file:
         lines = file.readlines()[:5]
     nside = int(lines[1][9:11])
