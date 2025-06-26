@@ -4,7 +4,7 @@ from orbit_finder import *
 from non_grav_accel import NonGravAccel
 from astroquery.jplhorizons import Horizons
 
-spice.furnsh('spice.mkn')
+spice.furnsh(cf.spmk_file)
 
 forces = ['SUN', 'PLANETS', 'ASTEROIDS', 'NON_GRAVITATIONAL',
           'EARTH_HARMONICS', 'SUN_HARMONICS', 'GR_EIH']
@@ -50,14 +50,12 @@ end_date = None
 
 
 ### Load data
-fobss = 'mpc_obs.txt'
 fdata = object_name+'.txt'
-Data = LoadDataMPC(fobss, fdata, start_date=start_date, end_date=end_date)
+Data = LoadDataMPC(fdata, start_date=start_date, end_date=end_date)
 et0 = spice.str2et(fit_epoch)/cf.DAYS
 max_iter = 25
 
-fbias = 'bias.dat'
-Data = DebiasData(fbias, Data)
+Data = DebiasData(Data)
 
 Data = AssignUncertainties(Data)
 
