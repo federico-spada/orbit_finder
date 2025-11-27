@@ -228,7 +228,7 @@ def AssignUncertainties(Data, default_sigma = 2.0):
 
 ### DIFFERENTIAL CORRECTION OF THE ORBIT --------------------------------------
 # References: Farnocchia et al. (2015); Carpino et al. (2003)
-def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter):
+def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter, chi2_rec=7., chi2_rej0=8.):
     # >>> use SVD for normal equations and covariance calculation
     def solve_svd(N, d, tolerance=1e-12): 
         U, Sigma, _ = np.linalg.svd(N, hermitian=True)
@@ -243,8 +243,8 @@ def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter):
         return x, Cov
     # <<<
     # parameters
-    chi2_rec = 7.  # recovery threshold
-    chi2_rej0 = 8.  # base rejection threshold
+    #chi2_rec = 7.  # recovery threshold
+    #chi2_rej0 = 8.  # base rejection threshold
     alpha  = 0.25  # fraction of max chi-square to use as increased rejection threshold 
     frac   = 0.05  # maximum fraction of epochs discarded in a single step
     n, m = len(x0), len(Data['ET'])
@@ -379,7 +379,7 @@ def PropagateAssist(x, et0, et, RS, assist_params, n_tau_iter=2):
         
 def RunAssist(x, et0, et, tau, assist_params):
     # unpack parameters:
-    forces, params_ng_radial = assist_params
+    forces, nongrav_coeffs = assist_params
     # set up REBOUND simulation with ASSIST extras
     def init_sim(t0, p0, ephem, params_ngforce):
         sim = rebound.Simulation()
@@ -390,12 +390,8 @@ def RunAssist(x, et0, et, tau, assist_params):
         extras.forces = forces
         # NG acceleration components:
         extras.particle_params = params_ngforce
-        # parameters of radial dependence of NG force:
-        extras.alpha = params_ng_radial['alpha']
-        extras.r0    = params_ng_radial['r0']
-        extras.nm    = params_ng_radial['m']
-        extras.nn    = params_ng_radial['n']
-        extras.nk    = params_ng_radial['k']
+        # parameters of radial dependence of NG force (Marsden73 g(r)):
+        extras.alpha, extras.r0, extras.nm, extras.nn, extras.nk = nongrav_coeffs
         return sim, extras
     t0 = et0
     t = et - tau
@@ -458,7 +454,7 @@ def RunAssist(x, et0, et, tau, assist_params):
 # SECOND OPTION: integrate the equations of motion with the SciPy ode solver
 # "solve_ivp"; slower option, but fully customizable equations (see "Derivs")
 def PropagateSciPy(x, et0, et, RS, scipy_params, n_tau_iter=2):
-    aNG, NGcoeff = scipy_params
+    aNG, nongrav_coeffs = scipy_params
     rtol = 1e-9
     atol = 1e-11
     #method = SWAG
@@ -471,11 +467,11 @@ def PropagateSciPy(x, et0, et, RS, scipy_params, n_tau_iter=2):
     y0 = np.concatenate([r0_, v0_, np.eye(6).flatten(), np.zeros((6,n_p)).flatten()])
     # forward integration from et0 to et[-1]
     tspan_f = [et0, et[-1]]
-    sol_f = solve_ivp(Derivs, tspan_f, y0, method=method, args=(parms_, aNG, NGcoeff),
+    sol_f = solve_ivp(Derivs, tspan_f, y0, method=method, args=(parms_, aNG, nongrav_coeffs),
             rtol=rtol, atol=atol, dense_output=True)
     # backward integration from et0 to et[0]
     tspan_b = [et0, et[0]]
-    sol_b = solve_ivp(Derivs, tspan_b, y0, method=method, args=(parms_, aNG, NGcoeff),
+    sol_b = solve_ivp(Derivs, tspan_b, y0, method=method, args=(parms_, aNG, nongrav_coeffs),
             rtol=rtol, atol=atol, dense_output=True)
     ii_f = np.where(et >  et0)[0]
     ii_b = np.where(et <= et0)[0]
@@ -493,7 +489,7 @@ def PropagateSciPy(x, et0, et, RS, scipy_params, n_tau_iter=2):
     return y, P, S
 
 # force model and linearization: see Montenbruck & Gill 2005, Chapters 3 and 7, resp.
-def Derivs(t, y, parms_, aNG, NGcoeff):
+def Derivs(t, y, parms_, aNG, nongrav_coeffs):
     r_ = y[0:3]
     v_ = y[3:6]
     r = np.linalg.norm(r_)
@@ -503,7 +499,7 @@ def Derivs(t, y, parms_, aNG, NGcoeff):
        aNG_, dadrNG, dadvNG, dadpNG = np.zeros(3), np.zeros((3,3)), np.zeros((3,3)), [] 
        n_p = 0
     else:
-       aNG_, dadrNG, dadvNG, dadpNG = aNG(r_, v_, parms_, NGcoeff)
+       aNG_, dadrNG, dadvNG, dadpNG = aNG(r_, v_, parms_, nongrav_coeffs)
        n_p = len(parms_) 
     ## <<<
     ### acceleration

@@ -3,13 +3,13 @@ from orbit_finder import *
 import config as cf
 
 ### FUNCTION IMPLEMENTING THE NON-GRAVITATIONAL ACCELERATION MODEL ------------
-def NonGravAccel(r_, v_, parms_, NGcoeff):
+def NonGravAccel(r_, v_, parms_, nongrav_coeffs):
     # >>> cross product matrix (cf. Montenbruck & Gill 2000) 
     def X(w_):
         wx, wy, wz = w_
         return np.array([ [0., -wz, +wy], [+wz, 0., -wx], [-wy, +wx, 0.] ])
     # <<<
-    alpha, r0, m, n, k = NGcoeff['alpha'], NGcoeff['r0'], NGcoeff['m'], NGcoeff['n'], NGcoeff['k']
+    alpha, r0, m, n, k = nongrav_coeffs
     r = np.linalg.norm(r_)
     h_ = np.cross(r_, v_)
     h = np.linalg.norm(h_) 

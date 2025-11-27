@@ -8,8 +8,11 @@ spice.furnsh(cf.spmk_file)
 
 forces = ['SUN', 'PLANETS', 'ASTEROIDS', 'NON_GRAVITATIONAL',
           'EARTH_HARMONICS', 'SUN_HARMONICS', 'GR_EIH']
-ma73_h2o = {'alpha':0.1113, 'r0':2.808, 'm':2.15, 'n':5.093, 'k':4.6142}
-inv_rsq  = {'alpha':1., 'r0':1, 'm':2., 'n':5.093, 'k':0.}
+#ma73 = {'alpha':0.1113, 'r0':2.808, 'm':2.15, 'n':5.093, 'k':4.6142}
+#inv_rsq  = {'alpha':1., 'r0':1, 'm':2., 'n':5.093, 'k':0.}
+# order is: alpha, r0, nm, nn, nk
+m73 = [0.1113, 2.808, 2.15, 5.093, 4.6142]
+r_2 = [1., 1., 2., 0., 0.]
 
 # A few use-cases
 
@@ -18,32 +21,32 @@ object_name = '6489'
 fit_epoch = '2021-01-21.0'
 parms0_ = []
 propagator = PropagateAssist
-prop_args  = forces, inv_rsq
+prop_args  = forces, r_2
 
 # (523599) 2003 RM 
 #object_name = '523599'
 #fit_epoch = '2017-05-05.0'
 #parms0_ = np.array([1e-13, 1e-13])
 #propagator = PropagateAssist
-#prop_args  = forces, inv_rsq
+#prop_args  = forces, r_2
 
 # 1I/'Oumuamua 
 #object_name = '1I'
 #fit_epoch = '2018-01-01.0'
 #parms0_ = np.array([1e-10])
 #propagator = PropagateAssist
-#prop_args  = forces, inv_rsq
+#prop_args  = forces, r_2
 #propagator = PropagateSciPy
-#prop_args = NonGravAccel, inv_rsq
+#prop_args = NonGravAccel, r_2
 
 # C/1998 P1
 #object_name = 'C_1998_P1'
 #fit_epoch = '1998-11-03'
 #parms0_ = np.array([1e-7, 1e-7, 1e-7, 10.])
 #propagator = PropagateSciPy
-#prop_args = NonGravAccel, ma73_h2o
+#prop_args = NonGravAccel, m73
 #propagator = PropagateAssist
-#prop_args = forces, ma73_h2o
+#prop_args = forces, m73
 
 start_date = None
 end_date = None
