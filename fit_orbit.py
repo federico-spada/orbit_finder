@@ -74,7 +74,7 @@ xH = np.array([vec[key][0] for key in ['x', 'y', 'z', 'vx', 'vy', 'vz']])
 x0 = np.r_[xH, parms0_]
 
 ### Differential correction
-Fit = DiffCorr(Data, et0, x0, propagator, prop_args, max_iter)
+Fit = DifferentialCorrection(Data, et0, x0, propagator, prop_args, max_iter)
 
 ### Output
 SummaryPlot(object_name, Data, Fit, scaled=True)

@@ -228,14 +228,18 @@ def AssignUncertainties(Data, default_sigma = 2.0):
 
 ### DIFFERENTIAL CORRECTION OF THE ORBIT --------------------------------------
 # References: Farnocchia et al. (2015); Carpino et al. (2003)
-def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter, chi2_rec=7., chi2_rej0=8.):
+def DifferentialCorrection(Data, et0, x0, 
+                           propagator, prop_args, 
+                           max_iter, 
+                           chi2_rec=7., chi2_rej0=8., alpha=0.25, frac=0.05,
+                           RMS_tol=1e-4, nrm_tol=1e-3):
     # >>> use SVD for normal equations and covariance calculation
-    def solve_svd(N, d, tolerance=1e-12): 
+    def solve_svd(N, d): 
         U, Sigma, _ = np.linalg.svd(N, hermitian=True)
         y = np.zeros_like(d)
         SigmaInv = np.zeros_like(Sigma)
         for i, sigma in enumerate(Sigma):
-            if sigma > tolerance:
+            if sigma > 1e-12:
                 y[i] = (U.T @ d)[i] / sigma
                 SigmaInv[i] = 1. / sigma
         x = U @ y
@@ -245,8 +249,8 @@ def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter, chi2_rec=7., chi2_r
     # parameters
     #chi2_rec = 7.  # recovery threshold
     #chi2_rej0 = 8.  # base rejection threshold
-    alpha  = 0.25  # fraction of max chi-square to use as increased rejection threshold 
-    frac   = 0.05  # maximum fraction of epochs discarded in a single step
+    #alpha  = 0.25  # fraction of max chi-square to use as increased rejection threshold 
+    #frac   = 0.05  # maximum fraction of epochs discarded in a single step
     n, m = len(x0), len(Data['ET'])
     # initializations 
     x = x0
@@ -306,7 +310,7 @@ def DiffCorr(Data, et0, x0, propagator, prop_args, max_iter, chi2_rec=7., chi2_r
         print('%4i   %12.6e %12.6e %12.6e %12.6e %6i %6i %6i %4.2f' % (k, RMS, chisq, nrm,
                np.linalg.norm(dx), m_rec, m_rej, m_use, m_use/m))
         # check for convergence to end loop:
-        if (abs(RMS/RMS_rm-1.) < 1e-4) | (nrm < 1e-3) | (np.linalg.norm(dx) < 1e-10):
+        if (abs(RMS/RMS_rm-1.) < RMS_tol) | (nrm < nrm_tol) | (np.linalg.norm(dx) < 1e-13):
             break
         # >>> this section handles outliers rejection/recovery
         # adjust rejection threshld for this step:
