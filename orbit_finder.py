@@ -290,6 +290,7 @@ def DifferentialCorrection(Data, et0, x0,
             chi2[i] = z @ np.linalg.inv(G) @ z
         ## solve normal equations using SVD decomposition of normal matrix
         dx, Cov = solve_svd(BTWB, BTWz)
+        dx[6:9] = np.clip(dx[6:9], -5e-7, 5e-7)
         # update parameters vector
         x = x - dx
         ## quality of fit statistics
