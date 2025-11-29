@@ -232,7 +232,8 @@ def DifferentialCorrection(Data, et0, x0,
                            propagator, prop_args, 
                            max_iter, 
                            chi2_rec=7., chi2_rej0=8., alpha=0.25, frac=0.05,
-                           RMS_tol=1e-4, nrm_tol=1e-3):
+                           RMS_tol=1e-4, nrm_tol=1e-3,
+                           scale=None):
     # >>> use SVD for normal equations and covariance calculation
     def solve_svd(N, d): 
         U, Sigma, _ = np.linalg.svd(N, hermitian=True)
@@ -258,6 +259,9 @@ def DifferentialCorrection(Data, et0, x0,
     Cov = np.zeros((n, n)) 
     m_rec, m_rej, m_use = 0, 0, m
     chi2 = np.zeros(m)
+    # scaling for x; default: identity
+    s = np.ones(n) if scale is None else np.asarray(scale)
+    Scale = np.diag(s)
     ### begin main loop of differential correction
     print('Differential correction begins.')
     print('#iter.     RMS       chi-square    ||dx||_M    ||dx||_2      #rec   #rej   #use frac')
@@ -275,11 +279,12 @@ def DifferentialCorrection(Data, et0, x0,
             W = np.diag(1./sigma**2)
             z = zm[i,:]
             B = Bm[i,:,:]
+            BS = B @ Scale
             # epochs flagged True are used in the fit
             if flag[i]:
                 # accumulate normal equations
-                BTWB += (B.T @ W @ B)
-                BTWz += (B.T @ W @ z)
+                BTWB += (BS.T @ W @ BS)
+                BTWz += (BS.T @ W @ z)
                 ress += z @ z * (206265.)**2 # for RMS in arc sec
                 #ress += (z @ W @ z) # for RMS scaled to sigmas (actually cost func.)
                 # covariance of post-fit residual if epoch i was included
@@ -289,7 +294,9 @@ def DifferentialCorrection(Data, et0, x0,
                 G = np.diag(sigma**2) + (B @ Cov @ B.T)
             chi2[i] = z @ np.linalg.inv(G) @ z
         ## solve normal equations using SVD decomposition of normal matrix
-        dx, Cov = solve_svd(BTWB, BTWz)
+        dxS, CovS = solve_svd(BTWB, BTWz)
+        dx = Scale @ dxS
+        Cov = Scale @ CovS @ Scale
         # update parameters vector
         x = x - dx
         ## quality of fit statistics
