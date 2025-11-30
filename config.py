@@ -1,7 +1,7 @@
 ### constants 
 RE = 6378.1366 # km
 FE = 1./298.257223563 ### Earth oblateness, WGS84 value 
-AU   = 1.495978707e8 # km
+AU = 1.495978707e8 # km
 CC = 299792.458 # km/s  
 DAYS = 86400 # s 
 MU_S = 132712440041.279419 # km^3/s^2
