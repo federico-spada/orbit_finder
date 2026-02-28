@@ -6,7 +6,7 @@ import spiceypy as spice
 import rebound 
 import assist
 from scipy.integrate import solve_ivp
-from extensisq import SWAG
+#from extensisq import SWAG
 from astropy import units as u
 from astropy_healpix import HEALPix
 
@@ -76,7 +76,7 @@ def LoadDataMPC(data_file, mpco_file=cf.mpco_file, start_date=None, end_date=Non
             increment = 2
         else:
             # "standard case": look up geodata in MPC list
-            indx_obs = np.where(obss == obs_code[j])[0]
+            indx_obs = np.where(obss == obs_code[j])[0][0]
             R0 = spice.cylrec(rcos[indx_obs], np.deg2rad(lons[indx_obs]), rsin[indx_obs])
             U = spice.pxform( 'ITRF93', 'J2000', et[j] )
             RS[j] = U @ R0 + rE
