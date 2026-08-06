@@ -1,0 +1,14 @@
+AU = 1.495978707e8 # km
+DAYS = 86400    # s 
+
+CC = 299792.458 # km/s  
+
+RE = 6378.1366 # km
+FE = 1./298.257223563 
+
+DCTY = 36525.0  # d
+DMIL = 365250.0 # d
+
+NGASCALE = 1e-8
+
+ARCSEC = 206264.80624709636 # arc sec per radian

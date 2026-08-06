@@ -1,0 +1,356 @@
+{
+  "Gaia_Int": {
+    "Value": "Gaia_Int",
+    "Meaning": "Gaia_Int",
+    "Deprecated": "No",
+    "Code": "3"
+  },
+  "PS1_DR2": {
+    "Value": "PS1DR2",
+    "Meaning": "PanSTARRS-1 DR 2",
+    "Deprecated": "No",
+    "Code": "2"
+  },
+  "PS1_DR1": {
+    "Value": "PS1DR1",
+    "Meaning": "PanSTARRS-1 DR 1",
+    "Deprecated": "No",
+    "Code": "1"
+  },
+  "ATLAS2": {
+    "Value": "ATLAS2",
+    "Meaning": "ATLAS-REFCAT 2",
+    "Deprecated": "No",
+    "Code": "Z"
+  },
+  "Gaia3": {
+    "Value": "GaiaDR3",
+    "Meaning": "Gaia DR 3 (Vega)",
+    "Deprecated": "No",
+    "Code": "W"
+  },
+  "Gaia3E": {
+    "Value": "GaiaEDR3",
+    "Meaning": "Gaia EDR 3",
+    "Deprecated": "No",
+    "Code": "X"
+  },
+  "Gaia2": {
+    "Value": "GaiaDR2",
+    "Meaning": "Gaia DR 2",
+    "Deprecated": "No",
+    "Code": "V"
+  },
+  "Gaia1": {
+    "Value": "GaiaDR1",
+    "Meaning": "Gaia DR 1",
+    "Deprecated": "No",
+    "Code": "U"
+  },
+  "Gaia2016": {
+    "Value": "Gaia2016",
+    "Meaning": "Gaia epoch 2016",
+    "Deprecated": "No",
+    "Code": "6"
+  },
+  "URAT1": {
+    "Value": "URAT1",
+    "Meaning": "URAT 1",
+    "Deprecated": "No",
+    "Code": "S"
+  },
+  "UCAC5": {
+    "Value": "UCAC5",
+    "Meaning": "UCAC 5",
+    "Deprecated": "No",
+    "Code": "Y"
+  },
+  "UCAC4": {
+    "Value": "UCAC4",
+    "Meaning": "UCAC 4",
+    "Deprecated": "No",
+    "Code": "q"
+  },
+  "PPMXL": {
+    "Value": "PPMXL",
+    "Meaning": "PPM-XL",
+    "Deprecated": "No",
+    "Code": "t"
+  },
+  "NOMAD": {
+    "Value": "NOMAD",
+    "Meaning": "NOMAD",
+    "Deprecated": "No",
+    "Code": "v"
+  },
+  "2MASS": {
+    "Value": "2MASS",
+    "Meaning": "2MASS",
+    "Deprecated": "No",
+    "Code": "L"
+  },
+  "UBSC": {
+    "Value": "USNOUBAD",
+    "Meaning": "USNO BSC",
+    "Deprecated": "No",
+    "Code": "5"
+  },
+  "UCAC3": {
+    "Value": "UCAC3",
+    "Meaning": "UCAC 3",
+    "Deprecated": "Yes",
+    "Code": "u"
+  },
+  "UCAC2": {
+    "Value": "UCAC2",
+    "Meaning": "UCAC 2",
+    "Deprecated": "Yes",
+    "Code": "r"
+  },
+  "UCAC1": {
+    "Value": "UCAC1",
+    "Meaning": "UCAC 1",
+    "Deprecated": "Yes",
+    "Code": "e"
+  },
+  "USNOB1": {
+    "Value": "USNOB1",
+    "Meaning": "USNO B1.0",
+    "Deprecated": "Yes",
+    "Code": "o"
+  },
+  "USNOA2": {
+    "Value": "USNOA2",
+    "Meaning": "USNO A2.0",
+    "Deprecated": "Yes",
+    "Code": "c"
+  },
+  "USNOSA2": {
+    "Value": "USNOSA2",
+    "Meaning": "USNO SA2.0",
+    "Deprecated": "Yes",
+    "Code": "d"
+  },
+  "USNOA1": {
+    "Value": "USNOA1",
+    "Meaning": "USNO A1.0",
+    "Deprecated": "Yes",
+    "Code": "a"
+  },
+  "USNOSA1": {
+    "Value": "USNOSA1",
+    "Meaning": "USNO SA1.0",
+    "Deprecated": "Yes",
+    "Code": "b"
+  },
+  "Tyc2": {
+    "Value": "Tycho2",
+    "Meaning": "Tycho 2",
+    "Deprecated": "Yes",
+    "Code": "g"
+  },
+  "Tyc1": {
+    "Value": "Tycho1",
+    "Meaning": "Tycho 1",
+    "Deprecated": "Yes",
+    "Code": "f"
+  },
+  "Hip2": {
+    "Value": "Hipparcos 2",
+    "Meaning": "Hipparcos 2",
+    "Deprecated": "Yes",
+    "Code": "x"
+  },
+  "Hip1": {
+    "Value": "Hipparcos",
+    "Meaning": "Hipparcos 1",
+    "Deprecated": "Yes",
+    "Code": "y"
+  },
+  "ACT": {
+    "Value": "ACT",
+    "Meaning": "ACT",
+    "Deprecated": "Yes",
+    "Code": "l"
+  },
+  "GSCACT": {
+    "Value": "GSCACT",
+    "Meaning": "GSC-ACT",
+    "Deprecated": "Yes",
+    "Code": "m"
+  },
+  "GSC2.3": {
+    "Value": "GSC2.3",
+    "Meaning": "GSC 2.3",
+    "Deprecated": "Yes",
+    "Code": "M"
+  },
+  "GSC2.2": {
+    "Value": "GSC2.2",
+    "Meaning": "GSC 2.2",
+    "Deprecated": "Yes",
+    "Code": "k"
+  },
+  "GSC1.2": {
+    "Value": "GSC1.2",
+    "Meaning": "GSC 1.2",
+    "Deprecated": "Yes",
+    "Code": "j"
+  },
+  "GSC1.1": {
+    "Value": "GSC1.1",
+    "Meaning": "GSC 1.1",
+    "Deprecated": "Yes",
+    "Code": "i"
+  },
+  "GSC1.0": {
+    "Value": "GSC1.0",
+    "Meaning": "GSC 1.0",
+    "Deprecated": "Yes",
+    "Code": "h"
+  },
+  "GSC": {
+    "Value": "GSC (version unspecified)",
+    "Meaning": "GSC (unspecified version)",
+    "Deprecated": "Yes",
+    "Code": "z"
+  },
+  "SDSS8": {
+    "Value": "SDSSDR8",
+    "Meaning": "SDSS DR8",
+    "Deprecated": "Yes",
+    "Code": "n"
+  },
+  "SDSS7": {
+    "Value": "SDSSDR7",
+    "Meaning": "SDSS DR7",
+    "Deprecated": "Yes",
+    "Code": "N"
+  },
+  "CMC15": {
+    "Value": "CMC15",
+    "Meaning": "CMC 15",
+    "Deprecated": "Yes",
+    "Code": "Q"
+  },
+  "CMC14": {
+    "Value": "CMC14",
+    "Meaning": "CMC 14",
+    "Deprecated": "Yes",
+    "Code": "w"
+  },
+  "SSTRC4": {
+    "Value": "SSTRC4",
+    "Meaning": "SST-RC4",
+    "Deprecated": "Yes",
+    "Code": "R"
+  },
+  "SSTRC1": {
+    "Value": "SSTRC1",
+    "Meaning": "SST-RC1",
+    "Deprecated": "Yes",
+    "Code": "O"
+  },
+  "MPOSC3": {
+    "Value": "MPOSC3",
+    "Meaning": "MPOSC 3",
+    "Deprecated": "Yes",
+    "Code": "P"
+  },
+  "PPM": {
+    "Value": "PPM",
+    "Meaning": "PPM",
+    "Deprecated": "Yes",
+    "Code": "p"
+  },
+  "AC": {
+    "Value": "AC",
+    "Meaning": "Astrographic Catalogue",
+    "Deprecated": "Yes",
+    "Code": "A"
+  },
+  "SAO1984": {
+    "Value": "SAO 1984",
+    "Meaning": "SAO 1984",
+    "Deprecated": "Yes",
+    "Code": "B"
+  },
+  "SAO": {
+    "Value": "SAO",
+    "Meaning": "SAO",
+    "Deprecated": "Yes",
+    "Code": "C"
+  },
+  "AGK3": {
+    "Value": "AGK 3",
+    "Meaning": "AGK 3",
+    "Deprecated": "Yes",
+    "Code": "D"
+  },
+  "FK4": {
+    "Value": "FK4",
+    "Meaning": "FK4",
+    "Deprecated": "Yes",
+    "Code": "E"
+  },
+  "ACRS": {
+    "Value": "ACRS",
+    "Meaning": "ACRS",
+    "Deprecated": "Yes",
+    "Code": "F"
+  },
+  "LickGas": {
+    "Value": "Lick Gaspra Catalogue",
+    "Meaning": "Lick Gaspra Catalogue",
+    "Deprecated": "Yes",
+    "Code": "G"
+  },
+  "Ida93": {
+    "Value": "Ida93 Catalogue",
+    "Meaning": "Ida93 Catalogue",
+    "Deprecated": "Yes",
+    "Code": "H"
+  },
+  "Perth70": {
+    "Value": "Perth 70",
+    "Meaning": "Perth 70",
+    "Deprecated": "Yes",
+    "Code": "I"
+  },
+  "COSMOS": {
+    "Value": "COSMOS/UKST Southern Sky Catalogue",
+    "Meaning": "COSMOS/UKST Southern Sky Catalogue",
+    "Deprecated": "Yes",
+    "Code": "J"
+  },
+  "Yale": {
+    "Value": "Yale",
+    "Meaning": "Yale",
+    "Deprecated": "Yes",
+    "Code": "K"
+  },
+  "ZZCAT": {
+    "Value": "ZZCAT",
+    "Meaning": "USNO Zodiacal Zone Catalog",
+    "Deprecated": "Yes",
+    "Code": " "
+  },
+  "IHW": {
+    "Value": "IHW",
+    "Meaning": "International Halley Watch",
+    "Deprecated": "Yes",
+    "Code": "0"
+  },
+  "GZ": {
+    "Value": "GZ",
+    "Meaning": "GZ Giacobini-Zinner Catalogue",
+    "Deprecated": "Yes",
+    "Code": "4"
+  },
+  "UNK": {
+    "Value": "UNK",
+    "Meaning": "UNKNOWN",
+    "Deprecated": "Yes",
+    "Code": " "
+  }
+}
