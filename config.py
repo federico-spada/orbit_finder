@@ -31,14 +31,14 @@ CC = CC * DAYS/AU
 
 ### parameters for propagation with rebound/assist:
 # large DE441 planets file:
-assist_planets_file = '/Users/fs255/rebound_assist/data/linux_m13000p17000.441'
+assist_planets_file = '/Users/fs255/data_assist/linux_m13000p17000.441'
 # alternatively, use smaller DE440 planets file (shorter timespan):
-#assist_planets   = '/Users/fs255/rebound_assist/data/linux_p1550p2650.440'
+#assist_planets   = '/Users/fs255/data_assist/linux_p1550p2650.440'
 # asteroids file
-assist_asteroids_file = '/Users/fs255/rebound_assist/data/sb441-n16.bsp'
+assist_asteroids_file = '/Users/fs255/data_assist/sb441-n16.bsp'
 
 
 ### default locations of other input files
-mpco_file = '/Users/fs255/science/orbit_finder/mpc_obs.txt'
-bias_file = '/Users/fs255/science/orbit_finder/bias.dat'
-spmk_file = '/Users/fs255/science/orbit_finder/spiceof.mkn'
+mpco_file = '/Users/fs255/celestial_mechanics/orbit_finder/mpc_obs.txt'
+bias_file = '/Users/fs255/celestial_mechanics/orbit_finder/bias.dat'
+spmk_file = '/Users/fs255/celestial_mechanics/orbit_finder/spiceof.mkn'
