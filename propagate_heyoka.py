@@ -3,13 +3,6 @@ import heyoka as hy
 
 import constants as cs
 
-### 2026 Feb 6 - FS 
-# Setting the default threshold to the _safe_ choices:
-# vsop2013_thresh = 1e-8 (~100 km accuracy in Jupiter's position wrt DE440)
-# elp2000_thresh  = 1e-6 (~20 km accuracy in Earth's position wrt DE440)
-# faster options: barely OK -> vsop2013_thresh = 1e-7, elp2000_thresh = 1e-5
-# absolute minimum -> vsop2013_thresh = 1e-6, elp2000_thresh = 1e-4
-
 mu_elp2000_scale_factor = (cs.DAYS)**2 / (cs.AU*1e3)**3
 CC = cs.CC * cs.DAYS / cs.AU
 
@@ -150,16 +143,6 @@ def InitializeTaylorIntegrator(ng_model, ng_npars, vsop2013_thresh=1e-8, elp2000
         z1 = F * z + G * vz
         r1 = hy.sqrt(x1**2 + y1**2 + z1**2)
         g = alpha * (r1/r0)**(-nm) * ( 1.0 + (r1/r0)**nn )**(-nk) * cs.NGASCALE
-        dvxdt += g * (hy.par[0] * ur[0] + hy.par[1] * us[0] + hy.par[2] * uw[0])
-        dvydt += g * (hy.par[0] * ur[1] + hy.par[1] * us[1] + hy.par[2] * uw[1])
-        dvzdt += g * (hy.par[0] * ur[2] + hy.par[1] * us[2] + hy.par[2] * uw[2])
-        all_vars = [x, y, z, vx, vy, vz, hy.par[0], hy.par[1], hy.par[2], hy.par[3]]
-    elif ng_npars == 5:
-        # NOTE: experimental; alpha, r0, nm from ng_model
-        v = hy.sqrt(v2)
-        S = 0.5*( 1.0 + hy.tanh(r_dot_v / (r * v) / 0.05) )
-        F = (1.0-S) * (r/r0)**hy.par[3] + S * (r/r0)**-hy.par[3]
-        g = alpha * (r/r0)**(-nm) * F * cs.NGASCALE
         dvxdt += g * (hy.par[0] * ur[0] + hy.par[1] * us[0] + hy.par[2] * uw[0])
         dvydt += g * (hy.par[0] * ur[1] + hy.par[1] * us[1] + hy.par[2] * uw[1])
         dvzdt += g * (hy.par[0] * ur[2] + hy.par[1] * us[2] + hy.par[2] * uw[2])

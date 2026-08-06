@@ -1,55 +1,118 @@
 # orbit_finder
 
-Python orbit determination code. Works with astrometric data from the Minor Planet Center (MPC) database. 
+`orbit_finder` is a Python package for orbit determination of small Solar System bodies from astrometric observations. It is designed to work primarily with observations retrieved from the Minor Planet Center (MPC) database and provides tools for data preprocessing, initial orbit determination, differential correction, and high-precision orbit propagation.
 
-## External dependencies
-* NumPy 
-* Matplotlib
-* astroquery.jplhorizons: https://astroquery.readthedocs.io/en/latest/jplhorizons/jplhorizons.html
-* astropy-healpix: https://astropy-healpix.readthedocs.io/en/latest/
-* SpiceyPy: https://spiceypy.readthedocs.io/en/stable/
-* REBOUND: https://rebound.readthedocs.io/en/latest/ 
-* ASSIST: https://assist.readthedocs.io/en/stable/
+The current Python implementation evolved from an earlier MATLAB version.
 
-## Required input files
-* For SpiceyPy: Meta-Kernel file "spice.mkn"
-  (see https://spiceypy.readthedocs.io/en/stable/other_stuff.html#lesson-1-kernel-management-with-the-kernel-subsystem);
-  Naif SPICE Kernels can be downloaded from: https://naif.jpl.nasa.gov/naif/data_generic.html
-* For ASSIST: ephemerides files "linux_p1550p2650.440" or "linux_m13000p17000.441"; "sb441-n16.bsp" 
-  (not part of this repository as they are relatively large in size; available from: https://assist.readthedocs.io/en/stable/installation/)
-* For bias correction of astrometric data: the required file "bias.dat" can be downloaded from:  https://ssd.jpl.nasa.gov/ftp/ssd/debias/debias_2018.tgz, (see also Eggl et al. 2020)
-* Input data: 
-    1. MPC observatory codes and geodata "mpc_obs.txt" (cf. https://www.minorplanetcenter.net/iau/lists/ObsCodes.html)
-    2. File with astrometric observations in MPC format; a few are included in this repository for testing and demonstration purposes.
+## Dependencies
+
+The code requires the following Python packages:
+
+- NumPy
+- Matplotlib
+- [astroquery.jplhorizons](https://astroquery.readthedocs.io/en/latest/jplhorizons/jplhorizons.html)
+- [astropy-healpix](https://astropy-healpix.readthedocs.io/en/latest/)
+- [SpiceyPy](https://spiceypy.readthedocs.io/en/stable/)
+- [REBOUND](https://rebound.readthedocs.io/en/latest/)
+- [ASSIST](https://assist.readthedocs.io/en/stable/)
+- [heyoka.py](https://bluescarni.github.io/heyoka.py/index.html)
+
+## Required external data files
+
+Some external data files are required to run the full functionality of the code. Due to their size and/or external licensing, they are not included in this repository.
+
+### SPICE kernels
+
+For SpiceyPy-based propagation, a SPICE meta-kernel file (e.g. `spice_orbit_finder.mkn`) is required. This file should point to the appropriate SPICE kernels installed on the local system.
+
+See the [SpiceyPy kernel management documentation](https://spiceypy.readthedocs.io/en/stable/other_stuff.html#lesson-1-kernel-management-with-the-kernel-subsystem).
+
+NAIF SPICE kernels can be downloaded from:
+https://naif.jpl.nasa.gov/naif/data_generic.html
+
+### ASSIST ephemerides
+
+The ASSIST propagator requires planetary ephemerides files:
+
+- `linux_p1550p2650.440` or `linux_m13000p17000.441`
+- `sb441-n16.bsp`
+
+These files are not included in this repository because of their size. They are available from the [ASSIST installation documentation](https://assist.readthedocs.io/en/stable/installation/).
+
+### Astrometric bias correction
+
+Bias correction of astrometric observations requires the file:
+
+- `bias.dat`
+
+The file can be obtained from:
+https://ssd.jpl.nasa.gov/ftp/ssd/debias/debias_2018.tgz
+
+See also Eggl et al. (2020).
+
+### Auxiliary MPC data files
+
+The following auxiliary files are required for processing MPC observations in ADES format:
+
+- `obscodes_extended.json`
+- `AstCatWithCodes.json`
+
+### Input observations
+
+Input observations should be provided in MPC ADES XML format (`.xml`). A few example files are included in this repository for testing and demonstration purposes.
 
 ## Description
-The orbit determination procedure is described in detail in the arXiv preprint https://arxiv.org/abs/2304.06964, and references therein.
-The current Python implementations improves the accuracy and extends the functionality of a previous MATLAB version.
 
-The code in "orbit_finder.py" includes functions to load the data (assumed to be in the standard MPC 80-columns format), apply bias correction, perform 
-preliminary orbit determination on a subset of three user-specified epochs, and refining the initial guess by differential correction.
+The orbit determination procedure implemented in this package is described in detail in:
 
-### Initial orbit determination
-At the moment, an implementation of a Gaussian-like initial orbit determination method based on three user-specified epochs is available, which can be used 
-to provide an initial guess for the differential correction procedure. Alternatively, the state vector at a user-specified epoch obtained from a query to 
-the JPL Horizons database can also be used for the same purpose. The latter option is recommended in general for its higher accuracy and flexibility (e.g., 
-it allows the user to freely choose the epoch at which the orbit will be determined).  
+- https://arxiv.org/abs/2304.06964
+- https://arxiv.org/abs/2603.00782
 
-### Differential correction of the orbit
-The differential correction procedure implements automatic outlier rejection (based on Carpino et al. 2003, Icarus, 166, 248), and can include the 
-magnitude of the components of non-gravitational acceleration (prescribed according to the formulation of Marsden et al. 1973) in the solve-for vector
-of parameters.
+and in the references therein.
 
-### Orbit propagation
-Two propagators are available for the integration of the equations of motion and of the corresponding variational equations: 
-1. Propagator based on REBOUND/ASSIST;
-2. Propagator based on scipy.integrate.solve_ivp; a fully customizable implementation of the equations of motion is provided
-   in this case; accepts external function implementing non-gravitational acceleration (see an example in non_grav_accel.py).
-The scipy-version allows full control on the implementation of the equations of motion (add/remove force components; implement different parametrizations), 
-but this freedom comes with a performance cost. 
+The code includes routines for:
+
+- loading and preprocessing astrometric observations;
+- applying astrometric bias corrections;
+- preliminary orbit determination;
+- differential correction and parameter estimation;
+- orbit propagation and uncertainty propagation.
+
+## Initial orbit determination
+
+The current implementation provides a Gaussian-like initial orbit determination method based on observations at three user-selected epochs. This method provides an initial state vector for the subsequent differential correction procedure.
+
+Alternatively, an initial state vector can be obtained from the JPL Horizons database and used as the starting point for orbit determination. This option is generally recommended because it provides higher accuracy and allows the user to freely choose the reference epoch.
+
+## Differential correction
+
+The differential correction procedure includes:
+
+- iterative least-squares orbit refinement;
+- automatic outlier rejection based on Carpino et al. (2003), *Icarus*, 166, 248;
+- optional estimation of non-gravitational acceleration parameters using the Marsden et al. (1973) formulation.
+
+## Orbit propagation
+
+Three propagators are currently available:
+
+1. **REBOUND/ASSIST propagator**
+
+   Uses numerical planetary ephemerides (JPL DE440/DE441) and is suitable for high-accuracy orbit propagation.
+
+2. **`scipy.integrate.solve_ivp` propagator**
+
+   A fully customizable implementation where the user can specify the equations of motion and optional non-gravitational accelerations.
+
+3. **heyoka.py propagator**
+
+   Provides high speed and high numerical accuracy. It should be used with caution because planetary perturbations are obtained from analytical models rather than numerical ephemerides.
 
 ## Usage
-Some example use cases are showcased in the driver script "fit_orbit.py". 
+
+Example workflows are provided in the driver script: `orbit_finder.py`
 
 ## Contributors
+
 Federico Spada
+

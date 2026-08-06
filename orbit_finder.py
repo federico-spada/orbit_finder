@@ -22,15 +22,15 @@ if __name__ == "__main__":
     ccod_file = '_aux/AstCatWithCodes.json'
 
     ### fit of 1I/'Oumuamua
-    #name = '1I'
-    #fit_epoch = '2017-11-23 TDB' 
-    #nga_parms = [1e-8]
+    name = '1I'
+    fit_epoch = '2017-11-23 TDB' 
+    nga_parms = [1e-8]
     ###
 
     ### fit of 6489 Golevka
-    name = '6489'
-    fit_epoch = '2026-06-09 TDB'
-    nga_parms = []
+    #name = '6489'
+    #fit_epoch = '2026-06-09 TDB'
+    #nga_parms = []
     ###
 
  
@@ -62,8 +62,8 @@ if __name__ == "__main__":
     #prop_args = LSODA, invrsq, NonGravAccel # or RK45, or SWAG from extensisq
 
     #propagator = PropagateWithHeyoka
-    #prop_args = InitializeTaylorIntegrator(ng_model=invrsq, ng_npars=4,
-    #    vsop2013_thresh=1e-8, elp2000_thresh=1e-6)[1]
+    #prop_args = InitializeTaylorIntegrator(ng_model=invrsq, ng_npars=len(nga_parms),
+    #    vsop2013_thresh=1e-6, elp2000_thresh=1e-4)[1]
 
     # initialize orbit fit
     x00 = QueryHorizons(name, fit_epoch)
