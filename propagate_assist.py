@@ -18,7 +18,7 @@ def PropagateWithAssist(x, et0, et, Rs, assist_params, n_tau_iter=2):
 
 def RunAssist(x, et0, et, tau, assist_params):
     # --- unpack input ---
-    forces, nongrav_coeffs, planets_eph_file, asteroids_eph_file = assist_params
+    forces, nongrav_coeffs, min_dt, planets_eph_file, asteroids_eph_file = assist_params
 
     t0 = et0
     t = et - tau
@@ -62,6 +62,9 @@ def RunAssist(x, et0, et, tau, assist_params):
     sim = rebound.Simulation()
     sim.add(p0)
     sim.t = t0
+
+    #sim.ri_ias15.min_dt = 0.001
+    sim.ri_ias15.min_dt = min_dt
 
     extras = assist.Extras(sim, ephem)
     extras.forces = forces

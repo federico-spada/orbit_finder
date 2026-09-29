@@ -22,15 +22,15 @@ if __name__ == "__main__":
     ccod_file = '_aux/AstCatWithCodes.json'
 
     ### fit of 1I/'Oumuamua
-    name = '1I'
-    fit_epoch = '2017-11-23 TDB' 
-    nga_parms = [1e-8]
+    #name = '1I'
+    #fit_epoch = '2017-11-23 TDB' 
+    #nga_parms = [1e-8]
     ###
 
     ### fit of 6489 Golevka
-    #name = '6489'
-    #fit_epoch = '2026-06-09 TDB'
-    #nga_parms = []
+    name = '6489'
+    fit_epoch = '2026-06-09 TDB'
+    nga_parms = []
     ###
 
  
@@ -53,10 +53,11 @@ if __name__ == "__main__":
     asteroids_eph_file = '_aux/sb441-n16.bsp'
     invrsq = [1., 1., 2., 0., 0.] # 1/r^2 NGA
     ma73 = [0.1113, 2.808, 2.15, 5.093, 4.6142] # Marsden (1973) H2O NGA
+    min_dt = 1e-4
 
     # choose propagator
     propagator = PropagateWithAssist
-    prop_args  = forces, invrsq, planets_eph_file, asteroids_eph_file
+    prop_args  = forces, invrsq, min_dt, planets_eph_file, asteroids_eph_file
     
     #propagator = PropagateWithSolIVP
     #prop_args = LSODA, invrsq, NonGravAccel # or RK45, or SWAG from extensisq
