@@ -22,12 +22,12 @@ def QueryHorizons(desig, fit_epoch):
 
 
 def InitOrbDet(Data, i1, i2, i3):
-    tau1 = Data['et'][i1]-Data['et'][i2]
-    tau3 = Data['et'][i3]-Data['et'][i2]
-    Ri_ = Data['Rs'][i1,:], Data['Rs'][i2,:], Data['Rs'][i3,:]
-    e1_ = spice.radrec(1., Data['ra'][i1], Data['de'][i1])
-    e2_ = spice.radrec(1., Data['ra'][i2], Data['de'][i2])
-    e3_ = spice.radrec(1., Data['ra'][i3], Data['de'][i3])
+    tau1 = Data.et[i1]-Data.et[i2]
+    tau3 = Data.et[i3]-Data.et[i2]
+    Ri_ = Data.Rs[i1,:], Data.Rs[i2,:], Data.Rs[i3,:]
+    e1_ = spice.radrec(1., Data.ra[i1], Data.dec[i1])
+    e2_ = spice.radrec(1., Data.ra[i2], Data.dec[i2])
+    e3_ = spice.radrec(1., Data.ra[i3], Data.dec[i3])
     ei_ = e1_, e2_, e3_
     r2i = 3.0
     kmax = 50
